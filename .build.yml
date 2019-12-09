@@ -4,21 +4,21 @@ secrets:
 packages:
   - go
 sources:
-  - https://github.com/go-ap/activitypub
+  - https://github.com/go-ap/client
 environment:
   GO111MODULE: 'on'
 tasks:
   - setup: |
-      cd activitypub && go mod download
+      cd client && go mod download
   - tests: |
-      cd activitypub && make test
+      cd client && make test
   - coverage: |
       set -a +x
-      cd activitypub && make coverage
+      cd client && make coverage
       GIT_SHA=$(git rev-parse --verify HEAD)
       GIT_BRANCH=$(git name-rev --name-only HEAD)
       source ~/.code-cov.sh
       curl -X POST \
-          --data-binary @activitypub.coverprofile \
+          --data-binary @client.coverprofile \
            -H 'Accept: application/json' \
-          "https://codecov.io/upload/v2?commit=${GIT_SHA}&token=${PUB_TOKEN}&branch=${GIT_BRANCH}&service=custom" || true
+          "https://codecov.io/upload/v2?commit=${GIT_SHA}&token=${CLIENT_TOKEN}&branch=${GIT_BRANCH}&service=custom" || true
