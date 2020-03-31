@@ -78,6 +78,9 @@ func NewClient() *client {
 }
 
 func (c *client) SignFn(fn RequestSignFn) {
+	if fn == nil {
+		return
+	}
 	c.signFn = fn
 }
 
@@ -132,9 +135,11 @@ func (c *client) req(method string, url string, body io.Reader) (*http.Request, 
 	if method == http.MethodPost {
 		req.Header.Set("Content-Type", ContentTypeJsonLD)
 	}
-	if err = c.signFn(req); err != nil {
-		err := errorf(pub.IRI(req.URL.String()), "Unable to sign request (method %q, previous error: %s)", req.Method, err)
-		return req, err
+	if c.signFn != nil {
+		if err = c.signFn(req); err != nil {
+			err := errorf(pub.IRI(req.URL.String()), "Unable to sign request (method %q, previous error: %s)", req.Method, err)
+			return req, err
+		}
 	}
 	return req, nil
 }
