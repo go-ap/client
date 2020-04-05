@@ -11,7 +11,7 @@ import (
 )
 
 type RequestSignFn func(*http.Request) error
-type LogFn func(...interface{})
+type LogFn func(string, ...interface{})
 
 type HttpClient interface {
 	Client
@@ -39,10 +39,10 @@ var ContentTypeJsonLD = `application/ld+json; profile="https://www.w3.org/ns/act
 var ContentTypeActivityJson = `application/activity+json`
 
 // ErrorLogger
-var ErrorLogger LogFn = func(el ...interface{}) {}
+var ErrorLogger LogFn = func(s string, el ...interface{}) {}
 
 // InfoLogger
-var InfoLogger LogFn = func(el ...interface{}) {}
+var InfoLogger LogFn = func(s string, el ...interface{}) {}
 
 var defaultSign RequestSignFn = func(r *http.Request) error { return nil }
 
@@ -102,19 +102,19 @@ func (c *client) LoadIRI(id pub.IRI) (pub.Item, error) {
 	}
 	if resp == nil {
 		err := errorf(id, "Unable to load from the AP end point: nil response")
-		ErrorLogger(err)
+		ErrorLogger(err.Error())
 		return obj, err
 	}
 	if resp.StatusCode != http.StatusOK {
 		err := errorf(id, "Unable to load from the AP end point: invalid status %d", resp.StatusCode)
-		ErrorLogger(err)
+		ErrorLogger(err.Error())
 		return obj, err
 	}
 
 	defer resp.Body.Close()
 	var body []byte
 	if body, err = ioutil.ReadAll(resp.Body); err != nil {
-		ErrorLogger(err)
+		ErrorLogger(err.Error())
 		return obj, err
 	}
 
