@@ -1,7 +1,9 @@
 package client
 
 import (
+	"bytes"
 	"fmt"
+	j "github.com/go-ap/jsonld"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -13,24 +15,15 @@ import (
 type RequestSignFn func(*http.Request) error
 type LogFn func(string, ...interface{})
 
-type HttpClient interface {
-	Client
-
-	CanSign
-
-	Head(string) (*http.Response, error)
-	Get(string) (*http.Response, error)
-	Post(string, string, io.Reader) (*http.Response, error)
-	Put(string, string, io.Reader) (*http.Response, error)
-	Delete(string, string, io.Reader) (*http.Response, error)
-}
-
 type CanSign interface {
 	SignFn(fn RequestSignFn)
 }
 
-type Client interface {
+type ActivityPub interface {
+	CanSign
+
 	LoadIRI(pub.IRI) (pub.Item, error)
+	ToCollection(pub.IRI, pub.Item) (pub.IRI, pub.Item, error)
 }
 
 // UserAgent value that the client uses when performing requests
@@ -51,7 +44,7 @@ type err struct {
 	iri pub.IRI
 }
 
-func errorf(i pub.IRI, msg string, p ...interface{}) error {
+func errf(i pub.IRI, msg string, p ...interface{}) error {
 	return &err{
 		msg: fmt.Sprintf(msg, p...),
 		iri: i,
@@ -61,7 +54,7 @@ func errorf(i pub.IRI, msg string, p ...interface{}) error {
 // Error returns the formatted error
 func (e *err) Error() string {
 	if len(e.iri) > 0 {
-		return fmt.Sprintf("%s\nwhen loading: %s", e.msg, e.iri)
+		return fmt.Sprintf("%s: %s", e.iri, e.msg)
 	} else {
 		return fmt.Sprintf("%s", e.msg)
 	}
@@ -69,11 +62,13 @@ func (e *err) Error() string {
 
 type client struct {
 	signFn RequestSignFn
+	c      *http.Client
 }
 
-func NewClient() *client {
+func New() *client {
 	return &client{
 		signFn: defaultSign,
+		c:      http.DefaultClient,
 	}
 }
 
@@ -87,10 +82,10 @@ func (c *client) SignFn(fn RequestSignFn) {
 // LoadIRI tries to dereference an IRI and load the full ActivityPub object it represents
 func (c *client) LoadIRI(id pub.IRI) (pub.Item, error) {
 	if len(id) == 0 {
-		return nil, errorf(id, "Invalid IRI, nil value")
+		return nil, errf(id, "Invalid IRI, nil value")
 	}
 	if _, err := url.ParseRequestURI(id.String()); err != nil {
-		return nil, errorf(id, "Invalid IRI: %s", err)
+		return nil, errf(id, "Invalid IRI: %s", err)
 	}
 	var err error
 	var obj pub.Item
@@ -101,12 +96,12 @@ func (c *client) LoadIRI(id pub.IRI) (pub.Item, error) {
 		return obj, err
 	}
 	if resp == nil {
-		err := errorf(id, "Unable to load from the AP end point: nil response")
+		err := errf(id, "Unable to load from the AP end point: nil response")
 		ErrorLogger(err.Error())
 		return obj, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		err := errorf(id, "Unable to load from the AP end point: invalid status %d", resp.StatusCode)
+		err := errf(id, "Unable to load from the AP end point: invalid status %d", resp.StatusCode)
 		ErrorLogger(err.Error())
 		return obj, err
 	}
@@ -137,7 +132,7 @@ func (c *client) req(method string, url string, body io.Reader) (*http.Request, 
 	}
 	if c.signFn != nil {
 		if err = c.signFn(req); err != nil {
-			err := errorf(pub.IRI(req.URL.String()), "Unable to sign request (method %q, previous error: %s)", req.Method, err)
+			err := errf(pub.IRI(req.URL.String()), "Unable to sign request (method %q, previous error: %s)", req.Method, err)
 			return req, err
 		}
 	}
@@ -145,7 +140,7 @@ func (c *client) req(method string, url string, body io.Reader) (*http.Request, 
 }
 
 // Head
-func (c client) Head(url string) (resp *http.Response, err error) {
+func (c client) Head(url string) (*http.Response, error) {
 	req, err := c.req(http.MethodHead, url, nil)
 	var log LogFn
 	if err != nil {
@@ -154,11 +149,11 @@ func (c client) Head(url string) (resp *http.Response, err error) {
 		log = InfoLogger
 	}
 	log(http.MethodHead, url)
-	return http.DefaultClient.Do(req)
+	return c.c.Do(req)
 }
 
 // Get wrapper over the functionality offered by the default http.Client object
-func (c client) Get(url string) (resp *http.Response, err error) {
+func (c client) Get(url string) (*http.Response, error) {
 	req, err := c.req(http.MethodGet, url, nil)
 	var log LogFn
 	if err != nil {
@@ -167,11 +162,11 @@ func (c client) Get(url string) (resp *http.Response, err error) {
 		log = InfoLogger
 	}
 	log(http.MethodGet, url)
-	return http.DefaultClient.Do(req)
+	return c.c.Do(req)
 }
 
 // Post wrapper over the functionality offered by the default http.Client object
-func (c *client) Post(url, contentType string, body io.Reader) (resp *http.Response, err error) {
+func (c *client) Post(url, contentType string, body io.Reader) (*http.Response, error) {
 	req, err := c.req(http.MethodPost, url, body)
 	var log LogFn
 	if err != nil {
@@ -181,11 +176,11 @@ func (c *client) Post(url, contentType string, body io.Reader) (resp *http.Respo
 	}
 	log(http.MethodPost, url)
 	req.Header.Set("Content-Type", contentType)
-	return http.DefaultClient.Do(req)
+	return c.c.Do(req)
 }
 
 // Put wrapper over the functionality offered by the default http.Client object
-func (c client) Put(url, contentType string, body io.Reader) (resp *http.Response, err error) {
+func (c client) Put(url, contentType string, body io.Reader) (*http.Response, error) {
 	req, err := c.req(http.MethodPut, url, body)
 	var log LogFn
 	if err != nil {
@@ -195,11 +190,11 @@ func (c client) Put(url, contentType string, body io.Reader) (resp *http.Respons
 	}
 	log(http.MethodPut, url)
 	req.Header.Set("Content-Type", contentType)
-	return http.DefaultClient.Do(req)
+	return c.c.Do(req)
 }
 
 // Delete wrapper over the functionality offered by the default http.Client object
-func (c client) Delete(url, contentType string, body io.Reader) (resp *http.Response, err error) {
+func (c client) Delete(url, contentType string, body io.Reader) (*http.Response, error) {
 	req, err := c.req(http.MethodDelete, url, body)
 	var log LogFn
 	if err != nil {
@@ -209,5 +204,29 @@ func (c client) Delete(url, contentType string, body io.Reader) (resp *http.Resp
 	}
 	log(http.MethodDelete, url)
 	req.Header.Set("Content-Type", contentType)
-	return http.DefaultClient.Do(req)
+	return c.c.Do(req)
+}
+
+func (c client) ToCollection(url pub.IRI, a pub.Item) (pub.IRI, pub.Item, error) {
+	if len(url) == 0 {
+		return "", nil, errf(url, "invalid URL to post to")
+	}
+	body, err := j.Marshal(a)
+	var resp *http.Response
+	var it pub.Item
+	var iri pub.IRI
+	resp, err = c.Post(url.String(), ContentTypeActivityJson, bytes.NewReader(body))
+	if err != nil {
+		return iri, it, err
+	}
+	if body, err = ioutil.ReadAll(resp.Body); err != nil {
+		ErrorLogger(err.Error())
+		return iri, it, err
+	}
+	if resp.StatusCode != http.StatusGone && resp.StatusCode >= http.StatusBadRequest {
+		return iri, it, errf(iri, "invalid status received: %d", resp.StatusCode)
+	}
+	iri = pub.IRI(resp.Header.Get("Location"))
+	it, err = pub.UnmarshalJSON(body)
+	return iri, it, err
 }

@@ -7,11 +7,11 @@ import (
 	pub "github.com/go-ap/activitypub"
 )
 
-func TestNewClient(t *testing.T) {
-	c := NewClient()
+func TestNew(t *testing.T) {
+	c := New()
 
 	if c.signFn == nil {
-		t.Errorf("NewClient didn't return a valid client, nil Sign function")
+		t.Errorf("New didn't return a valid client, nil Sign function")
 	}
 }
 
@@ -31,7 +31,7 @@ func TestErr_Error(t *testing.T) {
 
 func TestClient_LoadIRI(t *testing.T) {
 	empty := pub.IRI("")
-	c := NewClient()
+	c := New()
 
 	var err error
 	_, err = c.LoadIRI(empty)
