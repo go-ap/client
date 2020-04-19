@@ -3,7 +3,6 @@ package client
 import (
 	"bytes"
 	"fmt"
-	j "github.com/go-ap/jsonld"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -211,7 +210,7 @@ func (c client) ToCollection(url pub.IRI, a pub.Item) (pub.IRI, pub.Item, error)
 	if len(url) == 0 {
 		return "", nil, errf(url, "invalid URL to post to")
 	}
-	body, err := j.Marshal(a)
+	body, err := pub.MarshalJSON(a)
 	var resp *http.Response
 	var it pub.Item
 	var iri pub.IRI
