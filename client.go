@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -65,9 +66,15 @@ type client struct {
 }
 
 func New() *client {
+	c := http.DefaultClient
+	c.Transport = &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+		},
+	}
 	return &client{
 		signFn: defaultSign,
-		c:      http.DefaultClient,
+		c:      c,
 	}
 }
 
@@ -117,6 +124,7 @@ func (c *client) LoadIRI(id pub.IRI) (pub.Item, error) {
 
 func (c *client) req(method string, url string, body io.Reader) (*http.Request, error) {
 	req, err := http.NewRequest(method, url, body)
+	req.Proto = "HTTP/2.0"
 	if err != nil {
 		return req, err
 	}
