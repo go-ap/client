@@ -2,7 +2,6 @@ package client
 
 import (
 	"bytes"
-	"crypto/tls"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -63,19 +62,51 @@ func (e *err) Error() string {
 type client struct {
 	signFn RequestSignFn
 	c      *http.Client
+	infoFn LogFn
+	errFn  LogFn
 }
 
-func New() *client {
-	c := http.DefaultClient
-	c.Transport = &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
-		},
+func SetInfoLogger(logFn LogFn) optionFn {
+	return func(c *client) error {
+		c.infoFn = logFn
+		return nil
 	}
-	return &client{
+}
+
+func SetErrorLogger(logFn LogFn) optionFn {
+	return func(c *client) error {
+		c.errFn = logFn
+		return nil
+	}
+}
+
+func TLSConfigSkipVerify() optionFn {
+	return func(c *client) error {
+		if tr, ok := c.c.Transport.(*http.Transport); ok {
+			tr.TLSClientConfig.InsecureSkipVerify = true
+		}
+		return nil
+	}
+}
+
+func SignFn(fn RequestSignFn) optionFn {
+	return func(c *client) error {
+		c.signFn = fn
+		return nil
+	}
+}
+
+type optionFn func(s *client) error
+
+func New(o ...optionFn) *client {
+	c := &client{
 		signFn: defaultSign,
-		c:      c,
+		c:      http.DefaultClient,
 	}
+	for _, fn := range o {
+		fn(c)
+	}
+	return c
 }
 
 func (c *client) SignFn(fn RequestSignFn) {
