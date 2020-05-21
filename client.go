@@ -30,11 +30,11 @@ var UserAgent = "activitypub-go-http-client"
 var ContentTypeJsonLD = `application/ld+json; profile="https://www.w3.org/ns/activitystreams"`
 var ContentTypeActivityJson = `application/activity+json`
 
-// ErrorLogger
-var ErrorLogger LogFn = func(s string, el ...interface{}) {}
+// defaultErrorLogger
+var defaultErrorLogger LogFn = func(s string, el ...interface{}) {}
 
-// InfoLogger
-var InfoLogger LogFn = func(s string, el ...interface{}) {}
+// defaultInfoLogger
+var defaultInfoLogger LogFn = func(s string, el ...interface{}) {}
 
 var defaultSign RequestSignFn = func(r *http.Request) error { return nil }
 
@@ -102,6 +102,8 @@ func New(o ...optionFn) *client {
 	c := &client{
 		signFn: defaultSign,
 		c:      http.DefaultClient,
+		infoFn: defaultInfoLogger,
+		errFn:  defaultErrorLogger,
 	}
 	for _, fn := range o {
 		fn(c)
@@ -129,24 +131,24 @@ func (c *client) LoadIRI(id pub.IRI) (pub.Item, error) {
 
 	var resp *http.Response
 	if resp, err = c.Get(id.String()); err != nil {
-		ErrorLogger(err.Error())
+		c.errFn(err.Error())
 		return obj, err
 	}
 	if resp == nil {
 		err := errf(id, "Unable to load from the AP end point: nil response")
-		ErrorLogger(err.Error())
+		c.errFn(err.Error())
 		return obj, err
 	}
 	if resp.StatusCode != http.StatusOK {
 		err := errf(id, "Unable to load from the AP end point: invalid status %d", resp.StatusCode)
-		ErrorLogger(err.Error())
+		c.errFn(err.Error())
 		return obj, err
 	}
 
 	defer resp.Body.Close()
 	var body []byte
 	if body, err = ioutil.ReadAll(resp.Body); err != nil {
-		ErrorLogger(err.Error())
+		c.errFn(err.Error())
 		return obj, err
 	}
 
@@ -180,39 +182,33 @@ func (c *client) req(method string, url string, body io.Reader) (*http.Request, 
 // Head
 func (c client) Head(url string) (*http.Response, error) {
 	req, err := c.req(http.MethodHead, url, nil)
+	c.log(err)(http.MethodHead, url)
+	return c.c.Do(req)
+}
+
+func (c client) log(err error) LogFn {
 	var log LogFn
 	if err != nil {
-		log = ErrorLogger
+		log = func(s string, p ...interface{}) {
+			c.errFn(s+" Error: %s", append(p, err))
+		}
 	} else {
-		log = InfoLogger
+		log = c.infoFn
 	}
-	log(http.MethodHead, url)
-	return c.c.Do(req)
+	return log
 }
 
 // Get wrapper over the functionality offered by the default http.Client object
 func (c client) Get(url string) (*http.Response, error) {
 	req, err := c.req(http.MethodGet, url, nil)
-	var log LogFn
-	if err != nil {
-		log = ErrorLogger
-	} else {
-		log = InfoLogger
-	}
-	log(http.MethodGet, url)
+	c.log(err)(http.MethodGet, url)
 	return c.c.Do(req)
 }
 
 // Post wrapper over the functionality offered by the default http.Client object
 func (c *client) Post(url, contentType string, body io.Reader) (*http.Response, error) {
 	req, err := c.req(http.MethodPost, url, body)
-	var log LogFn
-	if err != nil {
-		log = ErrorLogger
-	} else {
-		log = InfoLogger
-	}
-	log(http.MethodPost, url)
+	c.log(err)(http.MethodPost, url)
 	req.Header.Set("Content-Type", contentType)
 	return c.c.Do(req)
 }
@@ -220,13 +216,7 @@ func (c *client) Post(url, contentType string, body io.Reader) (*http.Response, 
 // Put wrapper over the functionality offered by the default http.Client object
 func (c client) Put(url, contentType string, body io.Reader) (*http.Response, error) {
 	req, err := c.req(http.MethodPut, url, body)
-	var log LogFn
-	if err != nil {
-		log = ErrorLogger
-	} else {
-		log = InfoLogger
-	}
-	log(http.MethodPut, url)
+	c.log(err)(http.MethodPut, url)
 	req.Header.Set("Content-Type", contentType)
 	return c.c.Do(req)
 }
@@ -234,13 +224,7 @@ func (c client) Put(url, contentType string, body io.Reader) (*http.Response, er
 // Delete wrapper over the functionality offered by the default http.Client object
 func (c client) Delete(url, contentType string, body io.Reader) (*http.Response, error) {
 	req, err := c.req(http.MethodDelete, url, body)
-	var log LogFn
-	if err != nil {
-		log = ErrorLogger
-	} else {
-		log = InfoLogger
-	}
-	log(http.MethodDelete, url)
+	c.log(err)(http.MethodDelete, url)
 	req.Header.Set("Content-Type", contentType)
 	return c.c.Do(req)
 }
@@ -258,7 +242,7 @@ func (c client) ToCollection(url pub.IRI, a pub.Item) (pub.IRI, pub.Item, error)
 		return iri, it, err
 	}
 	if body, err = ioutil.ReadAll(resp.Body); err != nil {
-		ErrorLogger(err.Error())
+		c.errFn(err.Error())
 		return iri, it, err
 	}
 	if resp.StatusCode != http.StatusGone && resp.StatusCode >= http.StatusBadRequest {
