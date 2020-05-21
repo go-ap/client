@@ -68,14 +68,18 @@ type client struct {
 
 func SetInfoLogger(logFn LogFn) optionFn {
 	return func(c *client) error {
-		c.infoFn = logFn
+		if logFn != nil {
+			c.infoFn = logFn
+		}
 		return nil
 	}
 }
 
 func SetErrorLogger(logFn LogFn) optionFn {
 	return func(c *client) error {
-		c.errFn = logFn
+		if logFn != nil {
+			c.errFn = logFn
+		}
 		return nil
 	}
 }
@@ -91,7 +95,9 @@ func TLSConfigSkipVerify() optionFn {
 
 func SignFn(fn RequestSignFn) optionFn {
 	return func(c *client) error {
-		c.signFn = fn
+		if fn != nil {
+			c.signFn = fn
+		}
 		return nil
 	}
 }
