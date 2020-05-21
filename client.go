@@ -161,6 +161,18 @@ func (c *client) LoadIRI(id pub.IRI) (pub.Item, error) {
 	return pub.UnmarshalJSON(body)
 }
 
+func (c client) log(err error) LogFn {
+	var log LogFn
+	if err != nil {
+		log = func(s string, p ...interface{}) {
+			c.errFn(s+" Error: %s", append(p, err))
+		}
+	} else {
+		log = c.infoFn
+	}
+	return log
+}
+
 func (c *client) req(method string, url string, body io.Reader) (*http.Request, error) {
 	req, err := http.NewRequest(method, url, body)
 	req.Proto = "HTTP/2.0"
@@ -188,33 +200,21 @@ func (c *client) req(method string, url string, body io.Reader) (*http.Request, 
 // Head
 func (c client) Head(url string) (*http.Response, error) {
 	req, err := c.req(http.MethodHead, url, nil)
-	c.log(err)(http.MethodHead, url)
+	c.log(err)("%s: %s", http.MethodHead, url)
 	return c.c.Do(req)
-}
-
-func (c client) log(err error) LogFn {
-	var log LogFn
-	if err != nil {
-		log = func(s string, p ...interface{}) {
-			c.errFn(s+" Error: %s", append(p, err))
-		}
-	} else {
-		log = c.infoFn
-	}
-	return log
 }
 
 // Get wrapper over the functionality offered by the default http.Client object
 func (c client) Get(url string) (*http.Response, error) {
 	req, err := c.req(http.MethodGet, url, nil)
-	c.log(err)(http.MethodGet, url)
+	c.log(err)("%s: %s", http.MethodGet, url)
 	return c.c.Do(req)
 }
 
 // Post wrapper over the functionality offered by the default http.Client object
 func (c *client) Post(url, contentType string, body io.Reader) (*http.Response, error) {
 	req, err := c.req(http.MethodPost, url, body)
-	c.log(err)(http.MethodPost, url)
+	c.log(err)("%s: %s", http.MethodPost, url)
 	req.Header.Set("Content-Type", contentType)
 	return c.c.Do(req)
 }
@@ -222,7 +222,7 @@ func (c *client) Post(url, contentType string, body io.Reader) (*http.Response, 
 // Put wrapper over the functionality offered by the default http.Client object
 func (c client) Put(url, contentType string, body io.Reader) (*http.Response, error) {
 	req, err := c.req(http.MethodPut, url, body)
-	c.log(err)(http.MethodPut, url)
+	c.log(err)("%s: %s", http.MethodPut, url)
 	req.Header.Set("Content-Type", contentType)
 	return c.c.Do(req)
 }
@@ -230,7 +230,7 @@ func (c client) Put(url, contentType string, body io.Reader) (*http.Response, er
 // Delete wrapper over the functionality offered by the default http.Client object
 func (c client) Delete(url, contentType string, body io.Reader) (*http.Response, error) {
 	req, err := c.req(http.MethodDelete, url, body)
-	c.log(err)(http.MethodDelete, url)
+	c.log(err)("%s: %s", http.MethodDelete, url)
 	req.Header.Set("Content-Type", contentType)
 	return c.c.Do(req)
 }
