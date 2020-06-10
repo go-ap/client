@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"fmt"
+	"github.com/go-ap/errors"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -252,7 +253,13 @@ func (c client) ToCollection(url pub.IRI, a pub.Item) (pub.IRI, pub.Item, error)
 		return iri, it, err
 	}
 	if resp.StatusCode != http.StatusGone && resp.StatusCode >= http.StatusBadRequest {
-		return iri, it, errf(iri, "invalid status received: %d", resp.StatusCode)
+		msg := "invalid status received: %d"
+		if errors, err := errors.UnmarshalJSON(body); err == nil {
+			if len(errors) > 0 && len(errors[0].Error()) > 0 {
+				msg = errors[0].Error()
+			}
+		}
+		return iri, it, errf(iri, msg, resp.StatusCode)
 	}
 	iri = pub.IRI(resp.Header.Get("Location"))
 	it, err = pub.UnmarshalJSON(body)
