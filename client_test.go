@@ -37,8 +37,6 @@ func TestClient_LoadIRI(t *testing.T) {
 	_, err = c.LoadIRI(empty)
 	if err == nil {
 		t.Errorf("LoadIRI should have failed when using empty IRI value")
-	} else {
-		t.Logf("Valid error received: %s", err)
 	}
 
 	inv := pub.IRI("example.com")
@@ -68,4 +66,27 @@ func TestClient_Put(t *testing.T) {
 
 func TestClient_Delete(t *testing.T) {
 	t.Skipf("TODO")
+}
+
+func TestSetInfoLogger(t *testing.T) {
+	type args struct {
+		logFn LogFn
+	}
+	tests := []struct {
+		name string
+		args args
+		want *client
+	}{
+		{name: "nil-func", args: args{nil}, want: &client{infoFn: nil}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &client{}
+			got := SetInfoLogger(tt.args.logFn)
+			if err := got(c); err != nil {
+				t.Errorf("SetInfoLogger() returned error :%s", err)
+			}
+		})
+	}
 }
