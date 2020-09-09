@@ -70,7 +70,7 @@ func TestClient_Delete(t *testing.T) {
 
 func TestSetInfoLogger(t *testing.T) {
 	type args struct {
-		logFn LogFn
+		logFn CtxLogFn
 	}
 	tests := []struct {
 		name string

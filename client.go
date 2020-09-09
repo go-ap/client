@@ -12,7 +12,10 @@ import (
 	pub "github.com/go-ap/activitypub"
 )
 
+type Ctx map[string]interface{}
+
 type RequestSignFn func(*http.Request) error
+type CtxLogFn func(...Ctx) LogFn
 type LogFn func(string, ...interface{})
 
 type CanSign interface {
@@ -31,11 +34,10 @@ var UserAgent = "activitypub-go-http-client"
 var ContentTypeJsonLD = `application/ld+json; profile="https://www.w3.org/ns/activitystreams"`
 var ContentTypeActivityJson = `application/activity+json`
 
-// defaultErrorLogger
-var defaultErrorLogger LogFn = func(s string, el ...interface{}) {}
+// defaultLogger
+var defaultLogger LogFn = func(s string, el ...interface{}) {}
 
-// defaultInfoLogger
-var defaultInfoLogger LogFn = func(s string, el ...interface{}) {}
+var defaultCtxLogger CtxLogFn = func(ctx ...Ctx) LogFn { return defaultLogger }
 
 var defaultSign RequestSignFn = func(r *http.Request) error { return nil }
 
@@ -63,11 +65,11 @@ func (e *err) Error() string {
 type client struct {
 	signFn RequestSignFn
 	c      *http.Client
-	infoFn LogFn
-	errFn  LogFn
+	infoFn CtxLogFn
+	errFn  CtxLogFn
 }
 
-func SetInfoLogger(logFn LogFn) optionFn {
+func SetInfoLogger(logFn CtxLogFn) optionFn {
 	return func(c *client) error {
 		if logFn != nil {
 			c.infoFn = logFn
@@ -76,7 +78,7 @@ func SetInfoLogger(logFn LogFn) optionFn {
 	}
 }
 
-func SetErrorLogger(logFn LogFn) optionFn {
+func SetErrorLogger(logFn CtxLogFn) optionFn {
 	return func(c *client) error {
 		if logFn != nil {
 			c.errFn = logFn
@@ -109,8 +111,8 @@ func New(o ...optionFn) *client {
 	c := &client{
 		signFn: defaultSign,
 		c:      http.DefaultClient,
-		infoFn: defaultInfoLogger,
-		errFn:  defaultErrorLogger,
+		infoFn: defaultCtxLogger,
+		errFn:  defaultCtxLogger,
 	}
 	for _, fn := range o {
 		fn(c)
@@ -127,6 +129,7 @@ func (c *client) SignFn(fn RequestSignFn) {
 
 // LoadIRI tries to dereference an IRI and load the full ActivityPub object it represents
 func (c *client) LoadIRI(id pub.IRI) (pub.Item, error) {
+	errCtx := Ctx{"iri": id}
 	if len(id) == 0 {
 		return nil, errf(id, "Invalid IRI, nil value")
 	}
@@ -138,40 +141,41 @@ func (c *client) LoadIRI(id pub.IRI) (pub.Item, error) {
 
 	var resp *http.Response
 	if resp, err = c.Get(id.String()); err != nil {
-		c.errFn(err.Error())
+		c.errFn(errCtx)("Error: %s", err)
 		return obj, err
 	}
 	if resp == nil {
 		err := errf(id, "Unable to load from the AP end point: nil response")
-		c.errFn(err.Error())
+		c.errFn(errCtx)("Error: %s", err)
 		return obj, err
 	}
 	if resp.StatusCode != http.StatusOK {
 		err := errf(id, "Unable to load from the AP end point: invalid status %d", resp.StatusCode)
-		c.errFn(err.Error())
+		c.errFn(errCtx, Ctx{"status": resp.Status, "headers": resp.Header, "proto": resp.Proto})("Error: %s", err)
 		return obj, err
 	}
 
 	defer resp.Body.Close()
 	var body []byte
 	if body, err = ioutil.ReadAll(resp.Body); err != nil {
-		c.errFn(err.Error())
+		c.errFn(errCtx, Ctx{"status": resp.Status, "headers": resp.Header, "proto": resp.Proto})("Error: %s", err)
 		return obj, err
 	}
 
 	return pub.UnmarshalJSON(body)
 }
 
-func (c client) log(err error) LogFn {
-	var log LogFn
+func (c client) log(err error) CtxLogFn {
+	var logFn CtxLogFn
 	if err != nil {
-		log = func(s string, p ...interface{}) {
-			c.errFn(s+" Error: %s", append(p, err))
+		logFn = func(ctx ...Ctx) LogFn {
+			ctx = append(ctx, Ctx{"err": err})
+			return c.errFn(ctx...)
 		}
 	} else {
-		log = c.infoFn
+		logFn = c.infoFn
 	}
-	return log
+	return logFn
 }
 
 func (c *client) req(method string, url string, body io.Reader) (*http.Request, error) {
@@ -201,21 +205,21 @@ func (c *client) req(method string, url string, body io.Reader) (*http.Request, 
 // Head
 func (c client) Head(url string) (*http.Response, error) {
 	req, err := c.req(http.MethodHead, url, nil)
-	c.log(err)("%s: %s", http.MethodHead, url)
+	c.log(err)(Ctx{"URL": url})(http.MethodHead)
 	return c.c.Do(req)
 }
 
 // Get wrapper over the functionality offered by the default http.Client object
 func (c client) Get(url string) (*http.Response, error) {
 	req, err := c.req(http.MethodGet, url, nil)
-	c.log(err)("%s: %s", http.MethodGet, url)
+	c.log(err)(Ctx{"URL": url})(http.MethodGet)
 	return c.c.Do(req)
 }
 
 // Post wrapper over the functionality offered by the default http.Client object
 func (c *client) Post(url, contentType string, body io.Reader) (*http.Response, error) {
 	req, err := c.req(http.MethodPost, url, body)
-	c.log(err)("%s: %s", http.MethodPost, url)
+	c.log(err)(Ctx{"URL": url})(http.MethodPost)
 	req.Header.Set("Content-Type", contentType)
 	return c.c.Do(req)
 }
@@ -223,7 +227,7 @@ func (c *client) Post(url, contentType string, body io.Reader) (*http.Response, 
 // Put wrapper over the functionality offered by the default http.Client object
 func (c client) Put(url, contentType string, body io.Reader) (*http.Response, error) {
 	req, err := c.req(http.MethodPut, url, body)
-	c.log(err)("%s: %s", http.MethodPut, url)
+	c.log(err)(Ctx{"URL": url})(http.MethodPut)
 	req.Header.Set("Content-Type", contentType)
 	return c.c.Do(req)
 }
@@ -231,7 +235,7 @@ func (c client) Put(url, contentType string, body io.Reader) (*http.Response, er
 // Delete wrapper over the functionality offered by the default http.Client object
 func (c client) Delete(url, contentType string, body io.Reader) (*http.Response, error) {
 	req, err := c.req(http.MethodDelete, url, body)
-	c.log(err)("%s: %s", http.MethodDelete, url)
+	c.log(err)(Ctx{"URL": url})(http.MethodDelete)
 	req.Header.Set("Content-Type", contentType)
 	return c.c.Do(req)
 }
@@ -249,7 +253,7 @@ func (c client) ToCollection(url pub.IRI, a pub.Item) (pub.IRI, pub.Item, error)
 		return iri, it, err
 	}
 	if body, err = ioutil.ReadAll(resp.Body); err != nil {
-		c.errFn(err.Error())
+		c.errFn()("Error: %s", err)
 		return iri, it, err
 	}
 	if resp.StatusCode != http.StatusGone && resp.StatusCode >= http.StatusBadRequest {
