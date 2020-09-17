@@ -27,7 +27,9 @@ type ActivityPub interface {
 	CanSign
 
 	LoadIRI(pub.IRI) (pub.Item, error)
+	CtxLoadIRI(context.Context, pub.IRI) (pub.Item, error)
 	ToCollection(pub.IRI, pub.Item) (pub.IRI, pub.Item, error)
+	CtxToCollection(context.Context, pub.IRI, pub.Item) (pub.IRI, pub.Item, error)
 }
 
 // UserAgent value that the client uses when performing requests
@@ -128,8 +130,7 @@ func (c *client) SignFn(fn RequestSignFn) {
 	c.signFn = fn
 }
 
-// LoadIRI tries to dereference an IRI and load the full ActivityPub object it represents
-func (c *client) LoadIRI(id pub.IRI) (pub.Item, error) {
+func (c client) load(ctx context.Context, id pub.IRI) (pub.Item, error) {
 	errCtx := Ctx{"iri": id}
 	if len(id) == 0 {
 		return nil, errf(id, "Invalid IRI, nil value")
@@ -164,6 +165,16 @@ func (c *client) LoadIRI(id pub.IRI) (pub.Item, error) {
 	}
 
 	return pub.UnmarshalJSON(body)
+}
+
+// CtxLoadIRI tries to dereference an IRI and load the full ActivityPub object it represents
+func (c *client) CtxLoadIRI(ctx context.Context, id pub.IRI) (pub.Item, error) {
+	return c.load(ctx, id)
+}
+
+// LoadIRI tries to dereference an IRI and load the full ActivityPub object it represents
+func (c client) LoadIRI(id pub.IRI) (pub.Item, error) {
+	return c.load(context.Background(), id)
 }
 
 func (c client) log(err error) CtxLogFn {
@@ -219,9 +230,19 @@ func (c client) Head(url string) (*http.Response, error) {
 	return c.do(context.Background(), url, http.MethodHead, "", nil)
 }
 
+// CtxGet wrapper over the functionality offered by the default http.Client object
+func (c client) CtxGet(ctx context.Context, url string) (*http.Response, error) {
+	return c.do(ctx, url, http.MethodGet, "", nil)
+}
+
 // Get wrapper over the functionality offered by the default http.Client object
 func (c client) Get(url string) (*http.Response, error) {
 	return c.do(context.Background(), url, http.MethodGet, "", nil)
+}
+
+// CtxPost wrapper over the functionality offered by the default http.Client object
+func (c client) CtxPost(ctx context.Context, url, contentType string, body io.Reader) (*http.Response, error) {
+	return c.do(ctx, url, http.MethodPost, contentType, body)
 }
 
 // Post wrapper over the functionality offered by the default http.Client object
@@ -269,6 +290,12 @@ func (c client) toCollection(ctx context.Context, url pub.IRI, a pub.Item) (pub.
 	return iri, it, err
 }
 
+// ToCollection
 func (c client) ToCollection(url pub.IRI, a pub.Item) (pub.IRI, pub.Item, error) {
 	return c.toCollection(context.Background(), url, a)
+}
+
+// CtxToCollection
+func (c client) CtxToCollection(ctx context.Context, url pub.IRI, a pub.Item) (pub.IRI, pub.Item, error) {
+	return c.toCollection(ctx, url, a)
 }
