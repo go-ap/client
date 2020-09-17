@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"github.com/go-ap/errors"
 	"io"
@@ -178,20 +179,22 @@ func (c client) log(err error) CtxLogFn {
 	return logFn
 }
 
-func (c *client) req(method string, url string, body io.Reader) (*http.Request, error) {
-	req, err := http.NewRequest(method, url, body)
+func (c *client) req(ctx context.Context, method string, url, contentType string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	req.Proto = "HTTP/2.0"
 	if err != nil {
 		return req, err
 	}
 	req.Header.Set("User-Agent", UserAgent)
-	if method == http.MethodGet {
+	if method == http.MethodGet || method == http.MethodHead {
 		req.Header.Add("Accept", ContentTypeJsonLD)
 		req.Header.Add("Accept", ContentTypeActivityJson)
 		req.Header.Add("Accept", "application/json")
-	}
-	if method == http.MethodPost {
-		req.Header.Set("Content-Type", ContentTypeJsonLD)
+	} else {
+		if len(contentType) == 0 {
+			contentType = ContentTypeJsonLD
+		}
+		req.Header.Set("Content-Type", contentType)
 	}
 	if c.signFn != nil {
 		if err = c.signFn(req); err != nil {
@@ -202,45 +205,41 @@ func (c *client) req(method string, url string, body io.Reader) (*http.Request, 
 	return req, nil
 }
 
+func (c client) do(ctx context.Context, url, method, contentType string, body io.Reader) (*http.Response, error) {
+	req, err := c.req(ctx, method, url, contentType, body)
+	c.log(err)(Ctx{"URL": url})(method)
+	if err != nil {
+		return nil, err
+	}
+	return c.c.Do(req)
+}
+
 // Head
 func (c client) Head(url string) (*http.Response, error) {
-	req, err := c.req(http.MethodHead, url, nil)
-	c.log(err)(Ctx{"URL": url})(http.MethodHead)
-	return c.c.Do(req)
+	return c.do(context.Background(), url, http.MethodHead, "", nil)
 }
 
 // Get wrapper over the functionality offered by the default http.Client object
 func (c client) Get(url string) (*http.Response, error) {
-	req, err := c.req(http.MethodGet, url, nil)
-	c.log(err)(Ctx{"URL": url})(http.MethodGet)
-	return c.c.Do(req)
+	return c.do(context.Background(), url, http.MethodGet, "", nil)
 }
 
 // Post wrapper over the functionality offered by the default http.Client object
-func (c *client) Post(url, contentType string, body io.Reader) (*http.Response, error) {
-	req, err := c.req(http.MethodPost, url, body)
-	c.log(err)(Ctx{"URL": url})(http.MethodPost)
-	req.Header.Set("Content-Type", contentType)
-	return c.c.Do(req)
+func (c client) Post(url, contentType string, body io.Reader) (*http.Response, error) {
+	return c.do(context.Background(), url, http.MethodPost, contentType, body)
 }
 
 // Put wrapper over the functionality offered by the default http.Client object
 func (c client) Put(url, contentType string, body io.Reader) (*http.Response, error) {
-	req, err := c.req(http.MethodPut, url, body)
-	c.log(err)(Ctx{"URL": url})(http.MethodPut)
-	req.Header.Set("Content-Type", contentType)
-	return c.c.Do(req)
+	return c.do(context.Background(), url, http.MethodPut, contentType, body)
 }
 
 // Delete wrapper over the functionality offered by the default http.Client object
 func (c client) Delete(url, contentType string, body io.Reader) (*http.Response, error) {
-	req, err := c.req(http.MethodDelete, url, body)
-	c.log(err)(Ctx{"URL": url})(http.MethodDelete)
-	req.Header.Set("Content-Type", contentType)
-	return c.c.Do(req)
+	return c.do(context.Background(), url, http.MethodDelete, contentType, body)
 }
 
-func (c client) ToCollection(url pub.IRI, a pub.Item) (pub.IRI, pub.Item, error) {
+func (c client) toCollection(ctx context.Context, url pub.IRI, a pub.Item) (pub.IRI, pub.Item, error) {
 	if len(url) == 0 {
 		return "", nil, errf(url, "invalid URL to post to")
 	}
@@ -248,7 +247,7 @@ func (c client) ToCollection(url pub.IRI, a pub.Item) (pub.IRI, pub.Item, error)
 	var resp *http.Response
 	var it pub.Item
 	var iri pub.IRI
-	resp, err = c.Post(url.String(), ContentTypeActivityJson, bytes.NewReader(body))
+	resp, err = c.do(ctx, url.String(), http.MethodPost, ContentTypeActivityJson, bytes.NewReader(body))
 	if err != nil {
 		return iri, it, err
 	}
@@ -268,4 +267,8 @@ func (c client) ToCollection(url pub.IRI, a pub.Item) (pub.IRI, pub.Item, error)
 	iri = pub.IRI(resp.Header.Get("Location"))
 	it, err = pub.UnmarshalJSON(body)
 	return iri, it, err
+}
+
+func (c client) ToCollection(url pub.IRI, a pub.Item) (pub.IRI, pub.Item, error) {
+	return c.toCollection(context.Background(), url, a)
 }
