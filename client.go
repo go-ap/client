@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"github.com/go-ap/errors"
 	"io"
@@ -92,7 +93,13 @@ func SetErrorLogger(logFn CtxLogFn) optionFn {
 
 func TLSConfigSkipVerify() optionFn {
 	return func(c *client) error {
+		if c.c.Transport == nil {
+			c.c.Transport = http.DefaultTransport
+		}
 		if tr, ok := c.c.Transport.(*http.Transport); ok {
+			if tr.TLSClientConfig == nil {
+				tr.TLSClientConfig = new(tls.Config)
+			}
 			tr.TLSClientConfig.InsecureSkipVerify = true
 		}
 		return nil
