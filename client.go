@@ -272,6 +272,9 @@ func (c client) toCollection(ctx context.Context, url pub.IRI, a pub.Item) (pub.
 		return "", nil, errf(url, "invalid URL to post to")
 	}
 	body, err := pub.MarshalJSON(a)
+	if err != nil {
+		return "", nil, errf(url, "unable to marshal activity")
+	}
 	var resp *http.Response
 	var it pub.Item
 	var iri pub.IRI
@@ -287,7 +290,9 @@ func (c client) toCollection(ctx context.Context, url pub.IRI, a pub.Item) (pub.
 		msg := "invalid status received: %d"
 		if errors, err := errors.UnmarshalJSON(body); err == nil {
 			if len(errors) > 0 && len(errors[0].Error()) > 0 {
-				msg = errors[0].Error()
+				for _, retErr := range errors {
+					msg = msg + ", " + retErr.Error()
+				}
 			}
 		}
 		return iri, it, errf(iri, msg, resp.StatusCode)
