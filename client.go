@@ -158,7 +158,7 @@ func (c client) load(ctx context.Context, id pub.IRI) (pub.Item, error) {
 		c.errFn(errCtx)("Error: %s", err)
 		return obj, err
 	}
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusGone {
 		err := errf(id, "Unable to load from the AP end point: invalid status %d", resp.StatusCode)
 		c.errFn(errCtx, Ctx{"status": resp.Status, "headers": resp.Header, "proto": resp.Proto})("Error: %s", err)
 		return obj, err
