@@ -5,13 +5,13 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	pub "github.com/go-ap/activitypub"
 	"github.com/go-ap/errors"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
-
-	pub "github.com/go-ap/activitypub"
+	"time"
 )
 
 type Ctx map[string]interface{}
@@ -59,11 +59,7 @@ func errf(i pub.IRI, msg string, p ...interface{}) error {
 
 // Error returns the formatted error
 func (e *err) Error() string {
-	if len(e.iri) > 0 {
-		return fmt.Sprintf("%s: %s", e.iri, e.msg)
-	} else {
-		return fmt.Sprintf("%s", e.msg)
-	}
+	return e.msg
 }
 
 type client struct {
@@ -137,8 +133,9 @@ func (c *client) SignFn(fn RequestSignFn) {
 	c.signFn = fn
 }
 
-func (c client) load(ctx context.Context, id pub.IRI) (pub.Item, error) {
-	errCtx := Ctx{"iri": id}
+func (c client) loadCtx(ctx context.Context, id pub.IRI) (pub.Item, error) {
+	errCtx := Ctx{"IRI": id}
+	st := time.Now()
 	if len(id) == 0 {
 		return nil, errf(id, "Invalid IRI, nil value")
 	}
@@ -149,39 +146,40 @@ func (c client) load(ctx context.Context, id pub.IRI) (pub.Item, error) {
 	var obj pub.Item
 
 	var resp *http.Response
-	if resp, err = c.Get(id.String()); err != nil {
+	if resp, err = c.CtxGet(ctx, id.String()); err != nil {
 		c.errFn(errCtx)("Error: %s", err)
 		return obj, err
 	}
 	if resp == nil {
 		err := errf(id, "Unable to load from the AP end point: nil response")
-		c.errFn(errCtx)("Error: %s", err)
+		c.errFn(errCtx, Ctx{"duration": time.Now().Sub(st)})("Error: %s", err)
 		return obj, err
 	}
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusGone {
 		err := errf(id, "Unable to load from the AP end point: invalid status %d", resp.StatusCode)
-		c.errFn(errCtx, Ctx{"status": resp.Status, "headers": resp.Header, "proto": resp.Proto})("Error: %s", err)
+		c.errFn(errCtx, Ctx{"duration": time.Now().Sub(st)}, Ctx{"status": resp.Status, "headers": resp.Header, "proto": resp.Proto})("Error: %s", err)
 		return obj, err
 	}
 
 	defer resp.Body.Close()
 	var body []byte
 	if body, err = ioutil.ReadAll(resp.Body); err != nil {
-		c.errFn(errCtx, Ctx{"status": resp.Status, "headers": resp.Header, "proto": resp.Proto})("Error: %s", err)
+		c.errFn(errCtx, Ctx{"duration": time.Now().Sub(st)}, Ctx{"status": resp.Status, "headers": resp.Header, "proto": resp.Proto})("Error: %s", err)
 		return obj, err
 	}
+	c.infoFn(errCtx, Ctx{"duration": time.Now().Sub(st), "status": resp.Status})("OK")
 
 	return pub.UnmarshalJSON(body)
 }
 
 // CtxLoadIRI tries to dereference an IRI and load the full ActivityPub object it represents
 func (c *client) CtxLoadIRI(ctx context.Context, id pub.IRI) (pub.Item, error) {
-	return c.load(ctx, id)
+	return c.loadCtx(ctx, id)
 }
 
 // LoadIRI tries to dereference an IRI and load the full ActivityPub object it represents
 func (c client) LoadIRI(id pub.IRI) (pub.Item, error) {
-	return c.load(context.Background(), id)
+	return c.loadCtx(context.Background(), id)
 }
 
 func (c client) log(err error) CtxLogFn {
@@ -225,7 +223,6 @@ func (c *client) req(ctx context.Context, method string, url, contentType string
 
 func (c client) do(ctx context.Context, url, method, contentType string, body io.Reader) (*http.Response, error) {
 	req, err := c.req(ctx, method, url, contentType, body)
-	c.log(err)(Ctx{"URL": url})(method)
 	if err != nil {
 		return nil, err
 	}
