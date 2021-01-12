@@ -75,14 +75,14 @@ func TestSetInfoLogger(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want *client
+		want *C
 	}{
-		{name: "nil-func", args: args{nil}, want: &client{infoFn: nil}},
+		{name: "nil-func", args: args{nil}, want: &C{infoFn: nil}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &client{}
+			c := &C{}
 			got := SetInfoLogger(tt.args.logFn)
 			if err := got(c); err != nil {
 				t.Errorf("SetInfoLogger() returned error :%s", err)

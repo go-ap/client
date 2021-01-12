@@ -24,9 +24,8 @@ type CanSign interface {
 	SignFn(fn RequestSignFn)
 }
 
-type ActivityPub interface {
+type Basic interface {
 	CanSign
-
 	LoadIRI(pub.IRI) (pub.Item, error)
 	CtxLoadIRI(context.Context, pub.IRI) (pub.Item, error)
 	ToCollection(pub.IRI, pub.Item) (pub.IRI, pub.Item, error)
@@ -62,7 +61,7 @@ func (e *err) Error() string {
 	return e.msg
 }
 
-type client struct {
+type C struct {
 	signFn RequestSignFn
 	c      *http.Client
 	infoFn CtxLogFn
@@ -70,7 +69,7 @@ type client struct {
 }
 
 func SetInfoLogger(logFn CtxLogFn) optionFn {
-	return func(c *client) error {
+	return func(c *C) error {
 		if logFn != nil {
 			c.infoFn = logFn
 		}
@@ -79,7 +78,7 @@ func SetInfoLogger(logFn CtxLogFn) optionFn {
 }
 
 func SetErrorLogger(logFn CtxLogFn) optionFn {
-	return func(c *client) error {
+	return func(c *C) error {
 		if logFn != nil {
 			c.errFn = logFn
 		}
@@ -88,7 +87,7 @@ func SetErrorLogger(logFn CtxLogFn) optionFn {
 }
 
 func TLSConfigSkipVerify() optionFn {
-	return func(c *client) error {
+	return func(c *C) error {
 		if c.c.Transport == nil {
 			c.c.Transport = http.DefaultTransport
 		}
@@ -103,7 +102,7 @@ func TLSConfigSkipVerify() optionFn {
 }
 
 func SignFn(fn RequestSignFn) optionFn {
-	return func(c *client) error {
+	return func(c *C) error {
 		if fn != nil {
 			c.signFn = fn
 		}
@@ -111,10 +110,10 @@ func SignFn(fn RequestSignFn) optionFn {
 	}
 }
 
-type optionFn func(s *client) error
+type optionFn func(s *C) error
 
-func New(o ...optionFn) *client {
-	c := &client{
+func New(o ...optionFn) *C {
+	c := &C{
 		signFn: defaultSign,
 		c:      http.DefaultClient,
 		infoFn: defaultCtxLogger,
@@ -126,14 +125,14 @@ func New(o ...optionFn) *client {
 	return c
 }
 
-func (c *client) SignFn(fn RequestSignFn) {
+func (c *C) SignFn(fn RequestSignFn) {
 	if fn == nil {
 		return
 	}
 	c.signFn = fn
 }
 
-func (c client) loadCtx(ctx context.Context, id pub.IRI) (pub.Item, error) {
+func (c C) loadCtx(ctx context.Context, id pub.IRI) (pub.Item, error) {
 	errCtx := Ctx{"IRI": id}
 	st := time.Now()
 	if len(id) == 0 {
@@ -173,16 +172,16 @@ func (c client) loadCtx(ctx context.Context, id pub.IRI) (pub.Item, error) {
 }
 
 // CtxLoadIRI tries to dereference an IRI and load the full ActivityPub object it represents
-func (c *client) CtxLoadIRI(ctx context.Context, id pub.IRI) (pub.Item, error) {
+func (c *C) CtxLoadIRI(ctx context.Context, id pub.IRI) (pub.Item, error) {
 	return c.loadCtx(ctx, id)
 }
 
 // LoadIRI tries to dereference an IRI and load the full ActivityPub object it represents
-func (c client) LoadIRI(id pub.IRI) (pub.Item, error) {
+func (c C) LoadIRI(id pub.IRI) (pub.Item, error) {
 	return c.loadCtx(context.Background(), id)
 }
 
-func (c client) log(err error) CtxLogFn {
+func (c C) log(err error) CtxLogFn {
 	var logFn CtxLogFn
 	if err != nil {
 		logFn = func(ctx ...Ctx) LogFn {
@@ -195,7 +194,7 @@ func (c client) log(err error) CtxLogFn {
 	return logFn
 }
 
-func (c *client) req(ctx context.Context, method string, url, contentType string, body io.Reader) (*http.Request, error) {
+func (c *C) req(ctx context.Context, method string, url, contentType string, body io.Reader) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	req.Proto = "HTTP/2.0"
 	if err != nil {
@@ -221,7 +220,7 @@ func (c *client) req(ctx context.Context, method string, url, contentType string
 	return req, nil
 }
 
-func (c client) do(ctx context.Context, url, method, contentType string, body io.Reader) (*http.Response, error) {
+func (c C) do(ctx context.Context, url, method, contentType string, body io.Reader) (*http.Response, error) {
 	req, err := c.req(ctx, method, url, contentType, body)
 	if err != nil {
 		return nil, err
@@ -230,41 +229,41 @@ func (c client) do(ctx context.Context, url, method, contentType string, body io
 }
 
 // Head
-func (c client) Head(url string) (*http.Response, error) {
+func (c C) Head(url string) (*http.Response, error) {
 	return c.do(context.Background(), url, http.MethodHead, "", nil)
 }
 
 // CtxGet wrapper over the functionality offered by the default http.Client object
-func (c client) CtxGet(ctx context.Context, url string) (*http.Response, error) {
+func (c C) CtxGet(ctx context.Context, url string) (*http.Response, error) {
 	return c.do(ctx, url, http.MethodGet, "", nil)
 }
 
 // Get wrapper over the functionality offered by the default http.Client object
-func (c client) Get(url string) (*http.Response, error) {
+func (c C) Get(url string) (*http.Response, error) {
 	return c.do(context.Background(), url, http.MethodGet, "", nil)
 }
 
 // CtxPost wrapper over the functionality offered by the default http.Client object
-func (c client) CtxPost(ctx context.Context, url, contentType string, body io.Reader) (*http.Response, error) {
+func (c C) CtxPost(ctx context.Context, url, contentType string, body io.Reader) (*http.Response, error) {
 	return c.do(ctx, url, http.MethodPost, contentType, body)
 }
 
 // Post wrapper over the functionality offered by the default http.Client object
-func (c client) Post(url, contentType string, body io.Reader) (*http.Response, error) {
+func (c C) Post(url, contentType string, body io.Reader) (*http.Response, error) {
 	return c.do(context.Background(), url, http.MethodPost, contentType, body)
 }
 
 // Put wrapper over the functionality offered by the default http.Client object
-func (c client) Put(url, contentType string, body io.Reader) (*http.Response, error) {
+func (c C) Put(url, contentType string, body io.Reader) (*http.Response, error) {
 	return c.do(context.Background(), url, http.MethodPut, contentType, body)
 }
 
 // Delete wrapper over the functionality offered by the default http.Client object
-func (c client) Delete(url, contentType string, body io.Reader) (*http.Response, error) {
+func (c C) Delete(url, contentType string, body io.Reader) (*http.Response, error) {
 	return c.do(context.Background(), url, http.MethodDelete, contentType, body)
 }
 
-func (c client) toCollection(ctx context.Context, url pub.IRI, a pub.Item) (pub.IRI, pub.Item, error) {
+func (c C) toCollection(ctx context.Context, url pub.IRI, a pub.Item) (pub.IRI, pub.Item, error) {
 	if len(url) == 0 {
 		return "", nil, errf(url, "invalid URL to post to")
 	}
@@ -300,11 +299,11 @@ func (c client) toCollection(ctx context.Context, url pub.IRI, a pub.Item) (pub.
 }
 
 // ToCollection
-func (c client) ToCollection(url pub.IRI, a pub.Item) (pub.IRI, pub.Item, error) {
+func (c C) ToCollection(url pub.IRI, a pub.Item) (pub.IRI, pub.Item, error) {
 	return c.toCollection(context.Background(), url, a)
 }
 
 // CtxToCollection
-func (c client) CtxToCollection(ctx context.Context, url pub.IRI, a pub.Item) (pub.IRI, pub.Item, error) {
+func (c C) CtxToCollection(ctx context.Context, url pub.IRI, a pub.Item) (pub.IRI, pub.Item, error) {
 	return c.toCollection(ctx, url, a)
 }
