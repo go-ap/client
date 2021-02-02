@@ -189,7 +189,7 @@ func (c C) collection(ctx context.Context, i pub.IRI) (pub.CollectionInterface, 
 	if err != nil {
 		return nil, errors.Annotatef(err, "Unable to load IRI: %s", i)
 	}
-	if it == nil {
+	if pub.IsNil(it) {
 		return nil, errors.Newf("Unable to load IRI, nil item: %s", i)
 	}
 	var col pub.CollectionInterface
@@ -262,7 +262,7 @@ func replies(o pub.Item, f ...FilterFn) pub.IRI {
 	return iri(handlers.Replies.IRI(o), f...)
 }
 func validateActor(a pub.Item) error {
-	if a == nil {
+	if pub.IsNil(a) {
 		return errors.Errorf("Actor is nil")
 	}
 	if a.IsObject() && !pub.ActorTypes.Contains(a.GetType()) {
@@ -271,7 +271,7 @@ func validateActor(a pub.Item) error {
 	return nil
 }
 func validateObject(o pub.Item) error {
-	if o == nil {
+	if pub.IsNil(o) {
 		return errors.Errorf("object is nil")
 	}
 	if o.IsObject() && !pub.ObjectTypes.Contains(o.GetType()) {
