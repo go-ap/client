@@ -9,6 +9,7 @@ import (
 	"github.com/go-ap/errors"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/url"
 	"time"
@@ -89,7 +90,7 @@ func SetErrorLogger(logFn CtxLogFn) optionFn {
 func TLSConfigSkipVerify() optionFn {
 	return func(c *C) error {
 		if c.c.Transport == nil {
-			c.c.Transport = http.DefaultTransport
+			c.c.Transport = defaultTransport
 		}
 		if tr, ok := c.c.Transport.(*http.Transport); ok {
 			if tr.TLSClientConfig == nil {
@@ -112,10 +113,26 @@ func SignFn(fn RequestSignFn) optionFn {
 
 type optionFn func(s *C) error
 
+var defaultClient = &http.Client{
+	Timeout:   5 * time.Second,
+	Transport: defaultTransport,
+}
+
+var defaultTransport http.RoundTripper = &http.Transport{
+	MaxIdleConns:          100,
+	IdleConnTimeout:       90 * time.Second,
+	MaxIdleConnsPerHost:   20,
+	DialContext: (&net.Dialer{
+		// This is the TCP connect timeout in this instance.
+		Timeout: 2500 * time.Millisecond,
+	}).DialContext,
+	TLSHandshakeTimeout: 2500 * time.Millisecond,
+}
+
 func New(o ...optionFn) *C {
 	c := &C{
 		signFn: defaultSign,
-		c:      http.DefaultClient,
+		c:      defaultClient,
 		infoFn: defaultCtxLogger,
 		errFn:  defaultCtxLogger,
 	}
@@ -154,13 +171,16 @@ func (c C) loadCtx(ctx context.Context, id pub.IRI) (pub.Item, error) {
 		c.errFn(errCtx, Ctx{"duration": time.Now().Sub(st)})("Error: %s", err)
 		return obj, err
 	}
+	// NOTE(marius): here we might want to group the Close with a Flush of the
+	// Body using io.Copy(ioutil.Discard, resp.Body)
+	defer resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusGone {
 		err := errf(id, "Unable to load from the AP end point: invalid status %d", resp.StatusCode)
 		c.errFn(errCtx, Ctx{"duration": time.Now().Sub(st)}, Ctx{"status": resp.Status, "headers": resp.Header, "proto": resp.Proto})("Error: %s", err)
 		return obj, err
 	}
 
-	defer resp.Body.Close()
 	var body []byte
 	if body, err = ioutil.ReadAll(resp.Body); err != nil {
 		c.errFn(errCtx, Ctx{"duration": time.Now().Sub(st)}, Ctx{"status": resp.Status, "headers": resp.Header, "proto": resp.Proto})("Error: %s", err)
@@ -278,6 +298,10 @@ func (c C) toCollection(ctx context.Context, url pub.IRI, a pub.Item) (pub.IRI, 
 	if err != nil {
 		return iri, it, err
 	}
+	// NOTE(marius): here we might want to group the Close with a Flush of the
+	// Body using io.Copy(ioutil.Discard, resp.Body)
+	defer resp.Body.Close()
+
 	if body, err = ioutil.ReadAll(resp.Body); err != nil {
 		c.errFn()("Error: %s", err)
 		return iri, it, err
