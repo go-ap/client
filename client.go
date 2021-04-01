@@ -87,7 +87,7 @@ func SetErrorLogger(logFn CtxLogFn) optionFn {
 	}
 }
 
-func TLSConfigSkipVerify() optionFn {
+func SkipTLSValidation(skip bool) optionFn {
 	return func(c *C) error {
 		if c.c.Transport == nil {
 			c.c.Transport = defaultTransport
@@ -96,7 +96,7 @@ func TLSConfigSkipVerify() optionFn {
 			if tr.TLSClientConfig == nil {
 				tr.TLSClientConfig = new(tls.Config)
 			}
-			tr.TLSClientConfig.InsecureSkipVerify = true
+			tr.TLSClientConfig.InsecureSkipVerify = skip
 		}
 		return nil
 	}
