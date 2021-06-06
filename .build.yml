@@ -8,10 +8,10 @@ sources:
 environment:
   GO111MODULE: 'on'
 tasks:
-  - setup: |
-      cd client && go mod download
   - tests: |
-      cd client && make test
+      cd client
+      go mod vendor
+      make test
   - coverage: |
       set -a +x
       cd client && make coverage
