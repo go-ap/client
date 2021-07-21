@@ -5,14 +5,15 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	pub "github.com/go-ap/activitypub"
-	"github.com/go-ap/errors"
 	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
 	"time"
+
+	pub "github.com/go-ap/activitypub"
+	"github.com/go-ap/errors"
 )
 
 type Ctx map[string]interface{}
@@ -43,7 +44,7 @@ var defaultLogger LogFn = func(s string, el ...interface{}) {}
 
 var defaultCtxLogger CtxLogFn = func(ctx ...Ctx) LogFn { return defaultLogger }
 
-var defaultSign RequestSignFn = func(r *http.Request) error { return nil }
+var defaultSign RequestSignFn = func(*http.Request) error { return nil }
 
 type err struct {
 	msg string
@@ -131,7 +132,6 @@ var defaultTransport http.RoundTripper = &http.Transport{
 
 func New(o ...optionFn) *C {
 	c := &C{
-		signFn: defaultSign,
 		c:      defaultClient,
 		infoFn: defaultCtxLogger,
 		errFn:  defaultCtxLogger,
@@ -232,7 +232,8 @@ func (c *C) req(ctx context.Context, method string, url, contentType string, bod
 		req.Header.Set("Content-Type", contentType)
 	}
 	if c.signFn != nil {
-		if err = c.signFn(req); err != nil {
+		err = c.signFn(req)
+		if err != nil {
 			err := errf(pub.IRI(req.URL.String()), "Unable to sign request (method %q, previous error: %s)", req.Method, err)
 			return req, err
 		}
