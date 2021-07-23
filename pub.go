@@ -279,4 +279,3 @@ func validateObject(o pub.Item) error {
 	}
 	return nil
 }
-

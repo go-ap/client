@@ -70,6 +70,15 @@ type C struct {
 	errFn  CtxLogFn
 }
 
+func SetClient(httpclient *http.Client) optionFn {
+	return func(c *C) error {
+		if httpclient != nil {
+			c.c = httpclient
+		}
+		return nil
+	}
+}
+
 func SetInfoLogger(logFn CtxLogFn) optionFn {
 	return func(c *C) error {
 		if logFn != nil {
@@ -120,9 +129,9 @@ var defaultClient = &http.Client{
 }
 
 var defaultTransport http.RoundTripper = &http.Transport{
-	MaxIdleConns:          100,
-	IdleConnTimeout:       90 * time.Second,
-	MaxIdleConnsPerHost:   20,
+	MaxIdleConns:        100,
+	IdleConnTimeout:     90 * time.Second,
+	MaxIdleConnsPerHost: 20,
 	DialContext: (&net.Dialer{
 		// This is the TCP connect timeout in this instance.
 		Timeout: 2500 * time.Millisecond,
