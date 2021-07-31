@@ -36,8 +36,10 @@ type Basic interface {
 
 // UserAgent value that the client uses when performing requests
 var UserAgent = "activitypub-go-http-client"
-var ContentTypeJsonLD = `application/ld+json; profile="https://www.w3.org/ns/activitystreams"`
-var ContentTypeActivityJson = `application/activity+json`
+const (
+	ContentTypeJsonLD = `application/ld+json; profile="https://www.w3.org/ns/activitystreams"`
+	ContentTypeActivityJson = `application/activity+json`
+)
 
 // defaultLogger
 var defaultLogger LogFn = func(s string, el ...interface{}) {}
@@ -115,7 +117,7 @@ func SignFn(fn RequestSignFn) optionFn {
 type optionFn func(s *C) error
 
 var defaultClient = &http.Client{
-	Timeout:   5 * time.Second,
+	Timeout:   10 * time.Second,
 	Transport: defaultTransport,
 }
 
