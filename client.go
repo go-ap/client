@@ -72,6 +72,18 @@ type C struct {
 	errFn  CtxLogFn
 }
 
+// SetDefaultHTTPClient is a hacky solution to modify the default static instance of the http.DefaultClient
+//  to whatever we have instantiated currently.
+//
+// This ensures that options like SkipTLSValidation propagate to the requests that are not done explicitly by us,
+//  because we assume it will be executed under the same constraints.
+func SetDefaultHTTPClient() optionFn {
+	return func(c *C) error {
+		http.DefaultClient = c.c
+		return nil
+	}
+}
+
 func SetInfoLogger(logFn CtxLogFn) optionFn {
 	return func(c *C) error {
 		if logFn != nil {
@@ -243,12 +255,16 @@ func (c *C) req(ctx context.Context, method string, url, contentType string, bod
 	return req, nil
 }
 
+func (c *C) Do(req *http.Request) (*http.Response, error) {
+	return c.c.Do(req)
+}
+
 func (c C) do(ctx context.Context, url, method, contentType string, body io.Reader) (*http.Response, error) {
 	req, err := c.req(ctx, method, url, contentType, body)
 	if err != nil {
 		return nil, err
 	}
-	return c.c.Do(req)
+	return c.Do(req)
 }
 
 // Head
