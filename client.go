@@ -246,10 +246,8 @@ func (c *C) req(ctx context.Context, method string, url, contentType string, bod
 		req.Header.Set("Content-Type", contentType)
 	}
 	if c.signFn != nil {
-		err = c.signFn(req)
-		if err != nil {
-			err := errf(pub.IRI(req.URL.String()), "Unable to sign request (method %q, previous error: %s)", req.Method, err)
-			return req, err
+		if err = c.signFn(req); err != nil {
+			return req, errf(pub.IRI(req.URL.String()), "Unable to sign request (method %q, previous error: %s)", req.Method, err)
 		}
 	}
 	return req, nil
