@@ -3,10 +3,10 @@ module github.com/go-ap/client
 go 1.18
 
 require (
-	github.com/go-ap/activitypub v0.0.0-20220319193000-0b791c7c7fd9
+	github.com/go-ap/activitypub v0.0.0-20220320141507-109a45e9a0bc
 	github.com/go-ap/errors v0.0.0-20211205144917-1b5bb9681d99
-	github.com/go-ap/handlers v0.0.0-20220319193821-b3d780857903
-	github.com/go-ap/storage v0.0.0-20220319193711-c4e7072539bb
+	github.com/go-ap/handlers v0.0.0-20220320141738-fd0bfa95ef38
+	github.com/go-ap/storage v0.0.0-20220320141632-4ddb1f8732ce
 	github.com/mariusor/qstring v0.0.0-20200204164351-5a99d46de39d
 )
 
