@@ -3,14 +3,14 @@ module github.com/go-ap/client
 go 1.18
 
 require (
-	github.com/go-ap/activitypub v0.0.0-20220524090340-a60c25cc5c1c
+	github.com/go-ap/activitypub v0.0.0-20220524101432-7ed0d30e7c54
 	github.com/go-ap/errors v0.0.0-20220522120501-423698972a61
-	github.com/go-ap/handlers v0.0.0-20220524092304-2923d5ac4f6b
+	github.com/go-ap/handlers v0.0.0-20220524102301-a8ab351bd662
 )
 
 require (
 	git.sr.ht/~mariusor/go-xsd-duration v0.0.0-20200411073322-f0bcc40f0bf2 // indirect
 	github.com/go-ap/jsonld v0.0.0-20200327122108-fafac2de2660 // indirect
-	github.com/go-ap/storage v0.0.0-20220524091957-c5e24760b101 // indirect
+	github.com/go-ap/storage v0.0.0-20220524101523-696a6899e039 // indirect
 	github.com/valyala/fastjson v1.6.3 // indirect
 )
