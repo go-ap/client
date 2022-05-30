@@ -9,6 +9,7 @@ PROJECT_NAME := $(shell basename $(PWD))
 
 download:
 	$(GO) mod download all
+	$(GO) mod tidy
 
 test: download
 	$(TEST) $(TEST_FLAGS) $(TEST_TARGET)

@@ -19,5 +19,5 @@ tasks:
       source ~/.code-cov.sh
       curl -X POST \
           --data-binary @client.coverprofile \
-           -H 'Accept: application/json' \
+          -H 'Accept: application/json' \
           "https://codecov.io/upload/v2?commit=${GIT_SHA}&token=${CLIENT_TOKEN}&branch=${GIT_BRANCH}&service=custom" || true
