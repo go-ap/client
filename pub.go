@@ -7,7 +7,6 @@ import (
 
 	pub "github.com/go-ap/activitypub"
 	"github.com/go-ap/errors"
-	"github.com/go-ap/handlers"
 )
 
 type FilterFn func() url.Values
@@ -238,28 +237,28 @@ func iri(i pub.IRI, f ...FilterFn) pub.IRI {
 	return pub.IRI(fmt.Sprintf("%s%s", i, rawFilterQuery(f...)))
 }
 func inbox(a pub.Item, f ...FilterFn) pub.IRI {
-	return iri(handlers.Inbox.IRI(a), f...)
+	return iri(pub.Inbox.IRI(a), f...)
 }
 func outbox(a pub.Item, f ...FilterFn) pub.IRI {
-	return iri(handlers.Outbox.IRI(a), f...)
+	return iri(pub.Outbox.IRI(a), f...)
 }
 func following(a pub.Item, f ...FilterFn) pub.IRI {
-	return iri(handlers.Following.IRI(a), f...)
+	return iri(pub.Following.IRI(a), f...)
 }
 func followers(a pub.Item, f ...FilterFn) pub.IRI {
-	return iri(handlers.Followers.IRI(a), f...)
+	return iri(pub.Followers.IRI(a), f...)
 }
 func liked(a pub.Item, f ...FilterFn) pub.IRI {
-	return iri(handlers.Liked.IRI(a), f...)
+	return iri(pub.Liked.IRI(a), f...)
 }
 func likes(o pub.Item, f ...FilterFn) pub.IRI {
-	return iri(handlers.Likes.IRI(o), f...)
+	return iri(pub.Likes.IRI(o), f...)
 }
 func shares(o pub.Item, f ...FilterFn) pub.IRI {
-	return iri(handlers.Shares.IRI(o), f...)
+	return iri(pub.Shares.IRI(o), f...)
 }
 func replies(o pub.Item, f ...FilterFn) pub.IRI {
-	return iri(handlers.Replies.IRI(o), f...)
+	return iri(pub.Replies.IRI(o), f...)
 }
 func validateActor(a pub.Item) error {
 	if pub.IsNil(a) {
@@ -279,4 +278,3 @@ func validateObject(o pub.Item) error {
 	}
 	return nil
 }
-
