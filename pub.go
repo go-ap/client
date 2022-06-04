@@ -112,7 +112,7 @@ func (c C) Actor(ctx context.Context, iri vocab.IRI) (*vocab.Actor, error) {
 		return nil, errors.Annotatef(err, "Unable to load Actor: %s", iri)
 	}
 	var person *vocab.Actor
-	vocab.On(it, func(p *vocab.Actor) error {
+	vocab.OnActor(it, func(p *vocab.Actor) error {
 		person = p
 		return nil
 	})
@@ -126,7 +126,7 @@ func (c C) Activity(ctx context.Context, iri vocab.IRI) (*vocab.Activity, error)
 		return nil, errors.Annotatef(err, "Unable to load Activity: %s", iri)
 	}
 	var activity *vocab.Activity
-	vocab.On(it, func(a *vocab.Activity) error {
+	vocab.OnActivity(it, func(a *vocab.Activity) error {
 		activity = a
 		return nil
 	})
@@ -140,7 +140,7 @@ func (c C) Object(ctx context.Context, iri vocab.IRI) (*vocab.Object, error) {
 		return nil, errors.Annotatef(err, "Unable to load Object: %s", iri)
 	}
 	var object *vocab.Object
-	vocab.On(it, func(o *vocab.Object) error {
+	vocab.OnObject(it, func(o *vocab.Object) error {
 		object = o
 		return nil
 	})
@@ -160,7 +160,7 @@ func validateIRIForRequest(i vocab.IRI) error {
 
 func (c C) ToOutbox(ctx context.Context, a vocab.Item) (vocab.IRI, vocab.Item, error) {
 	var iri vocab.IRI
-	vocab.On(a, func(a *vocab.Activity) error {
+	vocab.OnActivity(a, func(a *vocab.Activity) error {
 		iri = outbox(a.Actor)
 		return nil
 	})
@@ -172,7 +172,7 @@ func (c C) ToOutbox(ctx context.Context, a vocab.Item) (vocab.IRI, vocab.Item, e
 
 func (c C) ToInbox(ctx context.Context, a vocab.Item) (vocab.IRI, vocab.Item, error) {
 	var iri vocab.IRI
-	vocab.On(a, func(a *vocab.Activity) error {
+	vocab.OnActivity(a, func(a *vocab.Activity) error {
 		iri = inbox(a.Actor)
 		return nil
 	})
