@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	pub "github.com/go-ap/activitypub"
+	vocab "github.com/go-ap/activitypub"
 )
 
 func TestNew(t *testing.T) {
@@ -18,7 +18,7 @@ func TestNew(t *testing.T) {
 func TestErr_Error(t *testing.T) {
 	e := err{
 		msg: "test",
-		iri: pub.IRI(""),
+		iri: vocab.IRI(""),
 	}
 
 	if len(e.Error()) == 0 {
@@ -30,7 +30,7 @@ func TestErr_Error(t *testing.T) {
 }
 
 func TestClient_LoadIRI(t *testing.T) {
-	empty := pub.IRI("")
+	empty := vocab.IRI("")
 	c := New()
 
 	var err error
@@ -39,7 +39,7 @@ func TestClient_LoadIRI(t *testing.T) {
 		t.Errorf("LoadIRI should have failed when using empty IRI value")
 	}
 
-	inv := pub.IRI("example.com")
+	inv := vocab.IRI("example.com")
 	_, err = c.LoadIRI(inv)
 	if err == nil {
 		t.Errorf("LoadIRI should have failed when using invalid http url")

@@ -12,7 +12,7 @@ import (
 	"net/url"
 	"time"
 
-	pub "github.com/go-ap/activitypub"
+	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/errors"
 )
 
@@ -28,10 +28,10 @@ type CanSign interface {
 
 type Basic interface {
 	CanSign
-	LoadIRI(pub.IRI) (pub.Item, error)
-	CtxLoadIRI(context.Context, pub.IRI) (pub.Item, error)
-	ToCollection(pub.IRI, pub.Item) (pub.IRI, pub.Item, error)
-	CtxToCollection(context.Context, pub.IRI, pub.Item) (pub.IRI, pub.Item, error)
+	LoadIRI(vocab.IRI) (vocab.Item, error)
+	CtxLoadIRI(context.Context, vocab.IRI) (vocab.Item, error)
+	ToCollection(vocab.IRI, vocab.Item) (vocab.IRI, vocab.Item, error)
+	CtxToCollection(context.Context, vocab.IRI, vocab.Item) (vocab.IRI, vocab.Item, error)
 }
 
 // UserAgent value that the client uses when performing requests
@@ -51,10 +51,10 @@ var defaultSign RequestSignFn = func(*http.Request) error { return nil }
 
 type err struct {
 	msg string
-	iri pub.IRI
+	iri vocab.IRI
 }
 
-func errf(i pub.IRI, msg string, p ...interface{}) error {
+func errf(i vocab.IRI, msg string, p ...interface{}) error {
 	return &err{
 		msg: fmt.Sprintf(msg, p...),
 		iri: i,
@@ -164,7 +164,7 @@ func (c *C) SignFn(fn RequestSignFn) {
 	c.signFn = fn
 }
 
-func (c C) loadCtx(ctx context.Context, id pub.IRI) (pub.Item, error) {
+func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 	errCtx := Ctx{"IRI": id}
 	st := time.Now()
 	if len(id) == 0 {
@@ -174,7 +174,7 @@ func (c C) loadCtx(ctx context.Context, id pub.IRI) (pub.Item, error) {
 		return nil, errf(id, "Invalid IRI: %s", err)
 	}
 	var err error
-	var obj pub.Item
+	var obj vocab.Item
 
 	var resp *http.Response
 	if resp, err = c.CtxGet(ctx, id.String()); err != nil {
@@ -203,16 +203,16 @@ func (c C) loadCtx(ctx context.Context, id pub.IRI) (pub.Item, error) {
 	}
 	c.infoFn(errCtx, Ctx{"duration": time.Now().Sub(st), "status": resp.Status})("OK")
 
-	return pub.UnmarshalJSON(body)
+	return vocab.UnmarshalJSON(body)
 }
 
 // CtxLoadIRI tries to dereference an IRI and load the full ActivityPub object it represents
-func (c *C) CtxLoadIRI(ctx context.Context, id pub.IRI) (pub.Item, error) {
+func (c *C) CtxLoadIRI(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 	return c.loadCtx(ctx, id)
 }
 
 // LoadIRI tries to dereference an IRI and load the full ActivityPub object it represents
-func (c C) LoadIRI(id pub.IRI) (pub.Item, error) {
+func (c C) LoadIRI(id vocab.IRI) (vocab.Item, error) {
 	return c.loadCtx(context.Background(), id)
 }
 
@@ -248,7 +248,7 @@ func (c *C) req(ctx context.Context, method string, url, contentType string, bod
 	}
 	if c.signFn != nil {
 		if err = c.signFn(req); err != nil {
-			return req, errf(pub.IRI(req.URL.String()), "Unable to sign request (method %q, previous error: %s)", req.Method, err)
+			return req, errf(vocab.IRI(req.URL.String()), "Unable to sign request (method %q, previous error: %s)", req.Method, err)
 		}
 	}
 	return req, nil
@@ -301,17 +301,17 @@ func (c C) Delete(url, contentType string, body io.Reader) (*http.Response, erro
 	return c.do(context.Background(), url, http.MethodDelete, contentType, body)
 }
 
-func (c C) toCollection(ctx context.Context, url pub.IRI, a pub.Item) (pub.IRI, pub.Item, error) {
+func (c C) toCollection(ctx context.Context, url vocab.IRI, a vocab.Item) (vocab.IRI, vocab.Item, error) {
 	if len(url) == 0 {
 		return "", nil, errf(url, "invalid URL to post to")
 	}
-	body, err := pub.MarshalJSON(a)
+	body, err := vocab.MarshalJSON(a)
 	if err != nil {
 		return "", nil, errf(url, "unable to marshal activity")
 	}
 	var resp *http.Response
-	var it pub.Item
-	var iri pub.IRI
+	var it vocab.Item
+	var iri vocab.IRI
 	resp, err = c.do(ctx, url.String(), http.MethodPost, ContentTypeActivityJson, bytes.NewReader(body))
 	if err != nil {
 		return iri, it, err
@@ -335,17 +335,17 @@ func (c C) toCollection(ctx context.Context, url pub.IRI, a pub.Item) (pub.IRI, 
 		}
 		return iri, it, errf(iri, msg, resp.StatusCode)
 	}
-	iri = pub.IRI(resp.Header.Get("Location"))
-	it, err = pub.UnmarshalJSON(body)
+	iri = vocab.IRI(resp.Header.Get("Location"))
+	it, err = vocab.UnmarshalJSON(body)
 	return iri, it, err
 }
 
 // ToCollection
-func (c C) ToCollection(url pub.IRI, a pub.Item) (pub.IRI, pub.Item, error) {
+func (c C) ToCollection(url vocab.IRI, a vocab.Item) (vocab.IRI, vocab.Item, error) {
 	return c.toCollection(context.Background(), url, a)
 }
 
 // CtxToCollection
-func (c C) CtxToCollection(ctx context.Context, url pub.IRI, a pub.Item) (pub.IRI, pub.Item, error) {
+func (c C) CtxToCollection(ctx context.Context, url vocab.IRI, a vocab.Item) (vocab.IRI, vocab.Item, error) {
 	return c.toCollection(ctx, url, a)
 }
