@@ -36,8 +36,9 @@ type Basic interface {
 
 // UserAgent value that the client uses when performing requests
 var UserAgent = "activitypub-go-http-client"
+
 const (
-	ContentTypeJsonLD = `application/ld+json; profile="https://www.w3.org/ns/activitystreams"`
+	ContentTypeJsonLD       = `application/ld+json; profile="https://www.w3.org/ns/activitystreams"`
 	ContentTypeActivityJson = `application/activity+json`
 )
 
@@ -134,9 +135,9 @@ var defaultClient = &http.Client{
 }
 
 var defaultTransport http.RoundTripper = &http.Transport{
-	MaxIdleConns:          100,
-	IdleConnTimeout:       90 * time.Second,
-	MaxIdleConnsPerHost:   20,
+	MaxIdleConns:        100,
+	IdleConnTimeout:     90 * time.Second,
+	MaxIdleConnsPerHost: 20,
 	DialContext: (&net.Dialer{
 		// This is the TCP connect timeout in this instance.
 		Timeout: 2500 * time.Millisecond,
