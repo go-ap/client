@@ -3,9 +3,8 @@ module github.com/go-ap/client
 go 1.18
 
 require (
-	github.com/go-ap/activitypub v0.0.0-20220604144731-6917e06269f5
+	github.com/go-ap/activitypub v0.0.0-20220606130025-d23c21aea068
 	github.com/go-ap/errors v0.0.0-20220529131844-4c7dbeabb369
-	github.com/mariusor/qstring v0.0.0-20200204164351-5a99d46de39d
 )
 
 require (
