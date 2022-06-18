@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
@@ -48,23 +47,6 @@ var defaultLogger LogFn = func(s string, el ...interface{}) {}
 var defaultCtxLogger CtxLogFn = func(ctx ...Ctx) LogFn { return defaultLogger }
 
 var defaultSign RequestSignFn = func(*http.Request) error { return nil }
-
-type err struct {
-	msg string
-	iri vocab.IRI
-}
-
-func errf(i vocab.IRI, msg string, p ...interface{}) error {
-	return &err{
-		msg: fmt.Sprintf(msg, p...),
-		iri: i,
-	}
-}
-
-// Error returns the formatted error
-func (e *err) Error() string {
-	return e.msg
-}
 
 type C struct {
 	signFn RequestSignFn
@@ -168,10 +150,10 @@ func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 	errCtx := Ctx{"IRI": id}
 	st := time.Now()
 	if len(id) == 0 {
-		return nil, errf(id, "Invalid IRI, nil value")
+		return nil, errf("Invalid IRI, nil value").iri(id)
 	}
 	if _, err := url.ParseRequestURI(id.String()); err != nil {
-		return nil, errf(id, "Invalid IRI: %s", err)
+		return nil, errf("Trying to load an invalid IRI").iri(id).annotate(err)
 	}
 	var err error
 	var obj vocab.Item
@@ -182,7 +164,7 @@ func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 		return obj, err
 	}
 	if resp == nil {
-		err := errf(id, "Unable to load from the AP end point: nil response")
+		err := errf("Unable to load from the AP end point: nil response").iri(id)
 		c.errFn(errCtx, Ctx{"duration": time.Now().Sub(st)})("Error: %s", err)
 		return obj, err
 	}
@@ -191,7 +173,7 @@ func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusGone {
-		err := errf(id, "Unable to load from the AP end point: invalid status %d", resp.StatusCode)
+		err := errf("Unable to load from the AP end point: invalid status %d", resp.StatusCode).iri(id)
 		c.errFn(errCtx, Ctx{"duration": time.Now().Sub(st)}, Ctx{"status": resp.Status, "headers": resp.Header, "proto": resp.Proto})("Error: %s", err)
 		return obj, err
 	}
@@ -248,7 +230,7 @@ func (c *C) req(ctx context.Context, method string, url, contentType string, bod
 	}
 	if c.signFn != nil {
 		if err = c.signFn(req); err != nil {
-			return req, errf(vocab.IRI(req.URL.String()), "Unable to sign request (method %q, previous error: %s)", req.Method, err)
+			return req, errf("Unable to sign %q request", req.Method).iri(vocab.IRI(req.URL.String())).annotate(err)
 		}
 	}
 	return req, nil
@@ -303,11 +285,11 @@ func (c C) Delete(url, contentType string, body io.Reader) (*http.Response, erro
 
 func (c C) toCollection(ctx context.Context, url vocab.IRI, a vocab.Item) (vocab.IRI, vocab.Item, error) {
 	if len(url) == 0 {
-		return "", nil, errf(url, "invalid URL to post to")
+		return "", nil, errf("invalid URL to post to").iri(url)
 	}
 	body, err := vocab.MarshalJSON(a)
 	if err != nil {
-		return "", nil, errf(url, "unable to marshal activity")
+		return "", nil, errf("unable to marshal activity").iri(url)
 	}
 	var resp *http.Response
 	var it vocab.Item
@@ -320,20 +302,14 @@ func (c C) toCollection(ctx context.Context, url vocab.IRI, a vocab.Item) (vocab
 	// Body using io.Copy(ioutil.Discard, resp.Body)
 	defer resp.Body.Close()
 
+	if resp.StatusCode >= http.StatusBadRequest {
+		err := errors.FromResponse(resp)
+		c.errFn()("Error: %s", err)
+		return iri, it, errf("invalid status received: %d", resp.StatusCode).iri(iri).annotate(err)
+	}
 	if body, err = ioutil.ReadAll(resp.Body); err != nil {
 		c.errFn()("Error: %s", err)
 		return iri, it, err
-	}
-	if resp.StatusCode != http.StatusGone && resp.StatusCode >= http.StatusBadRequest {
-		msg := "invalid status received: %d"
-		if errors, err := errors.UnmarshalJSON(body); err == nil {
-			if len(errors) > 0 && len(errors[0].Error()) > 0 {
-				for _, retErr := range errors {
-					msg = msg + ", " + retErr.Error()
-				}
-			}
-		}
-		return iri, it, errf(iri, msg, resp.StatusCode)
 	}
 	iri = vocab.IRI(resp.Header.Get("Location"))
 	it, err = vocab.UnmarshalJSON(body)

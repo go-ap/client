@@ -4,7 +4,8 @@ go 1.18
 
 require (
 	github.com/go-ap/activitypub v0.0.0-20220615144428-48208c70483b
-	github.com/go-ap/errors v0.0.0-20220615144307-e8bc4a40ae9f
+	github.com/go-ap/errors v0.0.0-20220618122732-319f41ac54e1
+	github.com/mariusor/qstring v0.0.0-20200204164351-5a99d46de39d
 )
 
 require (
