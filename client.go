@@ -302,7 +302,7 @@ func (c C) toCollection(ctx context.Context, url vocab.IRI, a vocab.Item) (vocab
 	// Body using io.Copy(ioutil.Discard, resp.Body)
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= http.StatusBadRequest {
+	if resp.StatusCode >= http.StatusBadRequest && resp.StatusCode != http.StatusGone {
 		err := errors.FromResponse(resp)
 		c.errFn()("Error: %s", err)
 		return iri, it, errf("invalid status received: %d", resp.StatusCode).iri(iri).annotate(err)
