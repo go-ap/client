@@ -11,11 +11,13 @@ import (
 	"net/url"
 	"time"
 
+	"git.sr.ht/~mariusor/lw"
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/errors"
+	"golang.org/x/oauth2"
 )
 
-type Ctx map[string]interface{}
+type Ctx = lw.Ctx
 
 type RequestSignFn func(*http.Request) error
 type CtxLogFn func(...Ctx) LogFn
@@ -56,18 +58,28 @@ type C struct {
 }
 
 // SetDefaultHTTPClient is a hacky solution to modify the default static instance of the http.DefaultClient
-//  to whatever we have instantiated currently.
+//
+//	to whatever we have instantiated currently.
 //
 // This ensures that options like SkipTLSValidation propagate to the requests that are not done explicitly by us,
-//  because we assume it will be executed under the same constraints.
-func SetDefaultHTTPClient() optionFn {
+//
+//	because we assume it will be executed under the same constraints.
+func SetDefaultHTTPClient() OptionFn {
 	return func(c *C) error {
 		http.DefaultClient = c.c
 		return nil
 	}
 }
 
-func SetInfoLogger(logFn CtxLogFn) optionFn {
+// SetHTTPClient sets the http client
+func SetHTTPClient(h *http.Client) OptionFn {
+	return func(c *C) error {
+		c.c = h
+		return nil
+	}
+}
+
+func SetInfoLogger(logFn CtxLogFn) OptionFn {
 	return func(c *C) error {
 		if logFn != nil {
 			c.infoFn = logFn
@@ -76,7 +88,7 @@ func SetInfoLogger(logFn CtxLogFn) optionFn {
 	}
 }
 
-func SetErrorLogger(logFn CtxLogFn) optionFn {
+func SetErrorLogger(logFn CtxLogFn) OptionFn {
 	return func(c *C) error {
 		if logFn != nil {
 			c.errFn = logFn
@@ -85,22 +97,30 @@ func SetErrorLogger(logFn CtxLogFn) optionFn {
 	}
 }
 
-func SkipTLSValidation(skip bool) optionFn {
-	return func(c *C) error {
-		if c.c.Transport == nil {
-			c.c.Transport = defaultTransport
+func getTransportWithTLSValidation(rt http.RoundTripper, skip bool) http.RoundTripper {
+	if rt == nil {
+		rt = defaultTransport
+	}
+	if tr, ok := rt.(*http.Transport); ok {
+		if tr.TLSClientConfig == nil {
+			tr.TLSClientConfig = new(tls.Config)
 		}
-		if tr, ok := c.c.Transport.(*http.Transport); ok {
-			if tr.TLSClientConfig == nil {
-				tr.TLSClientConfig = new(tls.Config)
-			}
-			tr.TLSClientConfig.InsecureSkipVerify = skip
+		tr.TLSClientConfig.InsecureSkipVerify = skip
+	}
+	return rt
+}
+
+func SkipTLSValidation(skip bool) OptionFn {
+	return func(c *C) error {
+		c.c.Transport = getTransportWithTLSValidation(c.c.Transport, skip)
+		if tr, ok := c.c.Transport.(*oauth2.Transport); ok {
+			tr.Base = getTransportWithTLSValidation(tr.Base, skip)
 		}
 		return nil
 	}
 }
 
-func SignFn(fn RequestSignFn) optionFn {
+func SignFn(fn RequestSignFn) OptionFn {
 	return func(c *C) error {
 		if fn != nil {
 			c.signFn = fn
@@ -109,7 +129,7 @@ func SignFn(fn RequestSignFn) optionFn {
 	}
 }
 
-type optionFn func(s *C) error
+type OptionFn func(s *C) error
 
 var defaultClient = &http.Client{
 	Timeout:   10 * time.Second,
@@ -127,7 +147,7 @@ var defaultTransport http.RoundTripper = &http.Transport{
 	TLSHandshakeTimeout: 2500 * time.Millisecond,
 }
 
-func New(o ...optionFn) *C {
+func New(o ...OptionFn) *C {
 	c := &C{
 		c:      defaultClient,
 		infoFn: defaultCtxLogger,
