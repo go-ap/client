@@ -13,6 +13,7 @@ import (
 	"git.sr.ht/~mariusor/lw"
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/errors"
+	"github.com/go-ap/jsonld"
 	"golang.org/x/oauth2"
 )
 
@@ -306,7 +307,7 @@ func (c C) toCollection(ctx context.Context, url vocab.IRI, a vocab.Item) (vocab
 	if len(url) == 0 {
 		return "", nil, errf("invalid URL to post to").iri(url)
 	}
-	body, err := vocab.MarshalJSON(a)
+	body, err := jsonld.WithContext(jsonld.IRI(vocab.ActivityBaseURI), jsonld.IRI(vocab.SecurityContextURI)).Marshal(a)
 	if err != nil {
 		return "", nil, errf("unable to marshal activity").iri(url)
 	}
