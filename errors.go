@@ -3,6 +3,7 @@ package client
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	vocab "github.com/go-ap/activitypub"
 )
@@ -31,7 +32,17 @@ func errf(msg string, p ...interface{}) err {
 
 // Error returns the formatted error
 func (e err) Error() string {
-	return e.msg
+	s := strings.Builder{}
+	s.WriteString(e.msg)
+	if e.i != "" {
+		s.WriteString(": ")
+		s.WriteString(e.i.String())
+	}
+	if e.err != nil {
+		s.WriteString(": ")
+		s.WriteString(e.err.Error())
+	}
+	return s.String()
 }
 
 func (e err) Unwrap() error {

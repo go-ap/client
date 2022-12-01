@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/tls"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -324,11 +323,11 @@ func (c C) toCollection(ctx context.Context, url vocab.IRI, a vocab.Item) (vocab
 
 	if resp.StatusCode >= http.StatusBadRequest && resp.StatusCode != http.StatusGone {
 		err := errors.FromResponse(resp)
-		c.errFn()("Error: %s", err)
+		c.errFn(Ctx{"iri": url, "status": resp.Status})(err.Error())
 		return iri, it, errf("invalid status received: %d", resp.StatusCode).iri(iri).annotate(err)
 	}
-	if body, err = ioutil.ReadAll(resp.Body); err != nil {
-		c.errFn()("Error: %s", err)
+	if body, err = io.ReadAll(resp.Body); err != nil {
+		c.errFn(Ctx{"iri": url, "status": resp.Status})(err.Error())
 		return iri, it, err
 	}
 	iri = vocab.IRI(resp.Header.Get("Location"))
