@@ -52,26 +52,3 @@ func TestClient_Put(t *testing.T) {
 func TestClient_Delete(t *testing.T) {
 	t.Skipf("TODO")
 }
-
-func TestSetInfoLogger(t *testing.T) {
-	type args struct {
-		logFn CtxLogFn
-	}
-	tests := []struct {
-		name string
-		args args
-		want *C
-	}{
-		{name: "nil-func", args: args{nil}, want: &C{infoFn: nil}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := &C{}
-			got := SetInfoLogger(tt.args.logFn)
-			if err := got(c); err != nil {
-				t.Errorf("SetInfoLogger() returned error :%s", err)
-			}
-		})
-	}
-}

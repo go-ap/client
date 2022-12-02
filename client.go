@@ -53,6 +53,7 @@ var defaultSign RequestSignFn = func(*http.Request) error { return nil }
 type C struct {
 	signFn RequestSignFn
 	c      *http.Client
+	l      lw.Logger
 	infoFn CtxLogFn
 	errFn  CtxLogFn
 }
@@ -71,27 +72,24 @@ func SetDefaultHTTPClient() OptionFn {
 	}
 }
 
-// SetHTTPClient sets the http client
-func SetHTTPClient(h *http.Client) OptionFn {
+// WithHTTPClient sets the http client
+func WithHTTPClient(h *http.Client) OptionFn {
 	return func(c *C) error {
 		c.c = h
 		return nil
 	}
 }
 
-func SetInfoLogger(logFn CtxLogFn) OptionFn {
+func WithLogger(l lw.Logger) OptionFn {
 	return func(c *C) error {
-		if logFn != nil {
-			c.infoFn = logFn
-		}
-		return nil
-	}
-}
-
-func SetErrorLogger(logFn CtxLogFn) OptionFn {
-	return func(c *C) error {
-		if logFn != nil {
-			c.errFn = logFn
+		c.l = l
+		if l != nil {
+			c.infoFn = func(ctx ...Ctx) LogFn {
+				return l.WithContext(ctx...).Debugf
+			}
+			c.errFn = func(ctx ...Ctx) LogFn {
+				return l.WithContext(ctx...).Warnf
+			}
 		}
 		return nil
 	}
@@ -110,6 +108,7 @@ func getTransportWithTLSValidation(rt http.RoundTripper, skip bool) http.RoundTr
 	return rt
 }
 
+// SkipTLSValidation
 func SkipTLSValidation(skip bool) OptionFn {
 	return func(c *C) error {
 		c.c.Transport = getTransportWithTLSValidation(c.c.Transport, skip)
@@ -120,7 +119,8 @@ func SkipTLSValidation(skip bool) OptionFn {
 	}
 }
 
-func SignFn(fn RequestSignFn) OptionFn {
+// WithSignFn
+func WithSignFn(fn RequestSignFn) OptionFn {
 	return func(c *C) error {
 		if fn != nil {
 			c.signFn = fn
@@ -129,6 +129,7 @@ func SignFn(fn RequestSignFn) OptionFn {
 	}
 }
 
+// OptionFn
 type OptionFn func(s *C) error
 
 var defaultClient = &http.Client{
@@ -209,7 +210,7 @@ func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 }
 
 // CtxLoadIRI tries to dereference an IRI and load the full ActivityPub object it represents
-func (c *C) CtxLoadIRI(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
+func (c C) CtxLoadIRI(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 	return c.loadCtx(ctx, id)
 }
 
@@ -252,7 +253,7 @@ func (c *C) req(ctx context.Context, method string, url, contentType string, bod
 		if err = c.signFn(req); err != nil {
 			c.errFn(lw.Ctx{
 				"method": req.Method,
-				"iri": req.URL.String(),
+				"iri":    req.URL.String(),
 			})("Unable to sign request: %s", err.Error())
 		}
 	}
