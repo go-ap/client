@@ -250,7 +250,10 @@ func (c *C) req(ctx context.Context, method string, url, contentType string, bod
 	}
 	if c.signFn != nil {
 		if err = c.signFn(req); err != nil {
-			return req, errf("Unable to sign %q request", req.Method).iri(vocab.IRI(req.URL.String())).annotate(err)
+			c.errFn(lw.Ctx{
+				"method": req.Method,
+				"iri": req.URL.String(),
+			})("Unable to sign request: %s", err.Error())
 		}
 	}
 	return req, nil
