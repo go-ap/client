@@ -328,20 +328,23 @@ func (c C) toCollection(ctx context.Context, url vocab.IRI, a vocab.Item) (vocab
 	if err != nil {
 		return iri, it, err
 	}
-	// NOTE(marius): here we might want to group the Close with a Flush of the
-	// Body using io.Copy(ioutil.Discard, resp.Body)
-	defer resp.Body.Close()
+	iri = vocab.IRI(resp.Header.Get("Location"))
+	if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusGone {
+		return iri, nil, nil
+	}
 
-	if resp.StatusCode >= http.StatusBadRequest && resp.StatusCode != http.StatusGone {
+	if resp.StatusCode >= http.StatusBadRequest {
 		err := errors.FromResponse(resp)
 		c.errFn(Ctx{"iri": url, "status": resp.Status})(err.Error())
 		return iri, it, errf("invalid status received: %d", resp.StatusCode).iri(iri).annotate(err)
 	}
+	// NOTE(marius): here we might want to group the Close with a Flush of the
+	// Body using io.Copy(ioutil.Discard, resp.Body)
+	defer resp.Body.Close()
 	if body, err = io.ReadAll(resp.Body); err != nil {
 		c.errFn(Ctx{"iri": url, "status": resp.Status})(err.Error())
 		return iri, it, err
 	}
-	iri = vocab.IRI(resp.Header.Get("Location"))
 	it, err = vocab.UnmarshalJSON(body)
 	return iri, it, err
 }
