@@ -249,6 +249,12 @@ func (c *C) req(ctx context.Context, method string, url, contentType string, bod
 		}
 		req.Header.Set("Content-Type", contentType)
 	}
+	if date := req.Header.Get("Date"); date == "" {
+		req.Header.Set("Date", time.Now().UTC().Format(time.RFC1123))
+	}
+	if host := req.Header.Get("Host"); host == "" {
+		req.Header.Set("Host", req.URL.Host)
+	}
 	if c.signFn != nil {
 		if err = c.signFn(req); err != nil {
 			c.errFn(lw.Ctx{
