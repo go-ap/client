@@ -322,28 +322,28 @@ func (c C) toCollection(ctx context.Context, url vocab.IRI, a vocab.Item) (vocab
 		return "", nil, errf("unable to marshal activity").iri(url)
 	}
 	var resp *http.Response
-	var it vocab.Item
 	var iri vocab.IRI
 	resp, err = c.do(ctx, url.String(), http.MethodPost, ContentTypeActivityJson, bytes.NewReader(body))
 	if err != nil {
-		return iri, it, err
+		return iri, nil, err
 	}
 	iri = vocab.IRI(resp.Header.Get("Location"))
-	if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusGone {
-		return iri, nil, nil
-	}
 
-	if resp.StatusCode >= http.StatusBadRequest {
+	if resp.StatusCode >= http.StatusBadRequest && resp.StatusCode != http.StatusGone {
 		err := errors.FromResponse(resp)
 		c.errFn(Ctx{"iri": url, "status": resp.Status})(err.Error())
-		return iri, it, errf("invalid status received: %d", resp.StatusCode).iri(iri).annotate(err)
+		return iri, nil, errf("invalid status received: %d", resp.StatusCode).iri(iri).annotate(err)
 	}
 	// NOTE(marius): here we might want to group the Close with a Flush of the
 	// Body using io.Copy(ioutil.Discard, resp.Body)
 	defer resp.Body.Close()
 	if body, err = io.ReadAll(resp.Body); err != nil {
 		c.errFn(Ctx{"iri": url, "status": resp.Status})(err.Error())
-		return iri, it, err
+		return iri, nil, err
+	}
+	var it vocab.Item
+	if body == nil {
+		return iri, nil, nil
 	}
 	it, err = vocab.UnmarshalJSON(body)
 	return iri, it, err
