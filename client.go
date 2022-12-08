@@ -337,16 +337,19 @@ func (c C) toCollection(ctx context.Context, url vocab.IRI, a vocab.Item) (vocab
 	// NOTE(marius): here we might want to group the Close with a Flush of the
 	// Body using io.Copy(ioutil.Discard, resp.Body)
 	defer resp.Body.Close()
-	if body, err = io.ReadAll(resp.Body); err != nil {
+	resBody, err := io.ReadAll(resp.Body)
+	if err != nil {
 		c.errFn(Ctx{"iri": url, "status": resp.Status})(err.Error())
 		return iri, nil, err
 	}
-	var it vocab.Item
-	if body == nil {
+	if len(resBody) == 0 {
 		return iri, nil, nil
 	}
-	it, err = vocab.UnmarshalJSON(body)
-	return iri, it, err
+	it, err := vocab.UnmarshalJSON(resBody)
+	if err != nil {
+		return iri, nil, err
+	}
+	return iri, it, nil
 }
 
 // ToCollection
