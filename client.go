@@ -44,11 +44,13 @@ const (
 )
 
 // defaultLogger
-var defaultLogger LogFn = func(s string, el ...interface{}) {}
+var (
+	defaultLogger LogFn = func(s string, el ...interface{}) {}
 
-var defaultCtxLogger CtxLogFn = func(ctx ...Ctx) LogFn { return defaultLogger }
+	defaultCtxLogger CtxLogFn = func(ctx ...Ctx) LogFn { return defaultLogger }
 
-var defaultSign RequestSignFn = func(*http.Request) error { return nil }
+	defaultSignFn RequestSignFn = func(*http.Request) error { return nil }
+)
 
 type C struct {
 	signFn RequestSignFn
@@ -59,12 +61,9 @@ type C struct {
 }
 
 // SetDefaultHTTPClient is a hacky solution to modify the default static instance of the http.DefaultClient
-//
-//	to whatever we have instantiated currently.
-//
+// to whatever we have instantiated currently.
 // This ensures that options like SkipTLSValidation propagate to the requests that are not done explicitly by us,
-//
-//	because we assume it will be executed under the same constraints.
+// because we assume it will be executed under the same constraints.
 func SetDefaultHTTPClient() OptionFn {
 	return func(c *C) error {
 		http.DefaultClient = c.c
@@ -132,25 +131,28 @@ func WithSignFn(fn RequestSignFn) OptionFn {
 // OptionFn
 type OptionFn func(s *C) error
 
-var defaultClient = &http.Client{
-	Timeout:   10 * time.Second,
-	Transport: defaultTransport,
-}
+var (
+	defaultClient = &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: defaultTransport,
+	}
 
-var defaultTransport http.RoundTripper = &http.Transport{
-	MaxIdleConns:        100,
-	IdleConnTimeout:     90 * time.Second,
-	MaxIdleConnsPerHost: 20,
-	DialContext: (&net.Dialer{
-		// This is the TCP connect timeout in this instance.
-		Timeout: 2500 * time.Millisecond,
-	}).DialContext,
-	TLSHandshakeTimeout: 2500 * time.Millisecond,
-}
+	defaultTransport http.RoundTripper = &http.Transport{
+		MaxIdleConns:        100,
+		IdleConnTimeout:     90 * time.Second,
+		MaxIdleConnsPerHost: 20,
+		DialContext: (&net.Dialer{
+			// This is the TCP connect timeout in this instance.
+			Timeout: 2500 * time.Millisecond,
+		}).DialContext,
+		TLSHandshakeTimeout: 2500 * time.Millisecond,
+	}
+)
 
 func New(o ...OptionFn) *C {
 	c := &C{
 		c:      defaultClient,
+		signFn: defaultSignFn,
 		infoFn: defaultCtxLogger,
 		errFn:  defaultCtxLogger,
 	}
@@ -255,13 +257,8 @@ func (c *C) req(ctx context.Context, method string, url, contentType string, bod
 	if host := req.Header.Get("Host"); host == "" {
 		req.Header.Set("Host", req.URL.Host)
 	}
-	if c.signFn != nil {
-		if err = c.signFn(req); err != nil {
-			c.errFn(lw.Ctx{
-				"method": req.Method,
-				"iri":    req.URL.String(),
-			})("Unable to sign request: %s", err.Error())
-		}
+	if err := c.signFn(req); err != nil {
+		c.errFn(lw.Ctx{"method": req.Method, "iri": req.URL.String()})("Unable to sign request: %+s", err)
 	}
 	return req, nil
 }
