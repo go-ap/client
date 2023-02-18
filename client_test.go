@@ -9,8 +9,8 @@ import (
 func TestNew(t *testing.T) {
 	c := New()
 
-	if c.signFn != nil {
-		t.Errorf("New didn't return a valid client, not nil Sign function")
+	if c.signFn == nil {
+		t.Errorf("New didn't return a valid client, nil Sign function")
 	}
 }
 
