@@ -7,7 +7,7 @@ require (
 	github.com/go-ap/activitypub v0.0.0-20230301123505-7471bcd90729
 	github.com/go-ap/errors v0.0.0-20221205040414-01c1adfc98ea
 	github.com/go-ap/jsonld v0.0.0-20221030091449-f2a191312c73
-	golang.org/x/oauth2 v0.1.0
+	golang.org/x/oauth2 v0.5.0
 )
 
 require (
@@ -18,8 +18,8 @@ require (
 	github.com/rs/xid v1.4.0 // indirect
 	github.com/rs/zerolog v1.29.0 // indirect
 	github.com/valyala/fastjson v1.6.4 // indirect
-	golang.org/x/net v0.1.0 // indirect
+	golang.org/x/net v0.7.0 // indirect
 	golang.org/x/sys v0.5.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/protobuf v1.28.0 // indirect
+	google.golang.org/protobuf v1.28.1 // indirect
 )
