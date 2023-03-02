@@ -39,7 +39,11 @@ type Basic interface {
 var UserAgent = "activitypub-go-http-client"
 
 const (
-	ContentTypeJsonLD       = `application/ld+json; profile="https://www.w3.org/ns/activitystreams"`
+	ContentTypeJsonLD = `application/ld+json; profile="https://www.w3.org/ns/activitystreams"`
+	// ContentTypeActivityJson This specification registers the application/activity+json MIME Media Type
+	// specifically for identifying documents conforming to the Activity Streams 2.0 format.
+	//
+	// https://www.w3.org/TR/activitystreams-core/#media-type
 	ContentTypeActivityJson = `application/activity+json`
 )
 
