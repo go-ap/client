@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	git.sr.ht/~mariusor/lw v0.0.0-20230317075520-07e173563bf8
-	github.com/go-ap/activitypub v0.0.0-20230626173101-16e4163853e3
+	github.com/go-ap/activitypub v0.0.0-20230719085617-89eaa895e29f
 	github.com/go-ap/errors v0.0.0-20221205040414-01c1adfc98ea
 	github.com/go-ap/jsonld v0.0.0-20221030091449-f2a191312c73
 	golang.org/x/oauth2 v0.5.0
@@ -19,7 +19,7 @@ require (
 	github.com/rs/zerolog v1.29.1 // indirect
 	github.com/valyala/fastjson v1.6.4 // indirect
 	golang.org/x/net v0.7.0 // indirect
-	golang.org/x/sys v0.9.0 // indirect
+	golang.org/x/sys v0.10.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
 )
