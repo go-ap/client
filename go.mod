@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	git.sr.ht/~mariusor/lw v0.0.0-20230317075520-07e173563bf8
-	github.com/go-ap/activitypub v0.0.0-20230729190052-737f716a1548
+	github.com/go-ap/activitypub v0.0.0-20230730144252-88f76b2af358
 	github.com/go-ap/errors v0.0.0-20221205040414-01c1adfc98ea
 	github.com/go-ap/jsonld v0.0.0-20221030091449-f2a191312c73
 	golang.org/x/oauth2 v0.5.0
