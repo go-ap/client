@@ -1,12 +1,12 @@
-module github.com/go-ap/client
+module github.com/mix/activitypubclient
 
 go 1.18
 
 require (
 	git.sr.ht/~mariusor/lw v0.0.0-20230317075520-07e173563bf8
-	github.com/go-ap/activitypub v0.0.0-20231114162308-e219254dc5c9
 	github.com/go-ap/errors v0.0.0-20231003111023-183eef4b31b7
 	github.com/go-ap/jsonld v0.0.0-20221030091449-f2a191312c73
+	github.com/mix/activitypub v0.0.0-20240202190651-1cebdea0ffe4
 	golang.org/x/oauth2 v0.12.0
 )
 
@@ -15,7 +15,6 @@ require (
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/mix/activitypub v0.0.0-20240202190651-1cebdea0ffe4 // indirect
 	github.com/rs/xid v1.5.0 // indirect
 	github.com/rs/zerolog v1.31.0 // indirect
 	github.com/valyala/fastjson v1.6.4 // indirect
