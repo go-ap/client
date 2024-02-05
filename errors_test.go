@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	vocab "github.com/go-ap/activitypub"
+	vocab "github.com/mix/activitypub"
 )
 
 func TestErr_Error(t *testing.T) {

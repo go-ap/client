@@ -3,7 +3,7 @@ package client
 import (
 	"testing"
 
-	vocab "github.com/go-ap/activitypub"
+	vocab "github.com/mix/activitypub"
 )
 
 func TestNew(t *testing.T) {

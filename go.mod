@@ -15,6 +15,7 @@ require (
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mix/activitypub v0.0.0-20240202190651-1cebdea0ffe4 // indirect
 	github.com/rs/xid v1.5.0 // indirect
 	github.com/rs/zerolog v1.31.0 // indirect
 	github.com/valyala/fastjson v1.6.4 // indirect
