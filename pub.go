@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/url"
 
-	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/errors"
+	vocab "github.com/mix/activitypub"
 )
 
 type FilterFn func() url.Values

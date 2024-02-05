@@ -5,7 +5,7 @@ import (
 	"io"
 	"strings"
 
-	vocab "github.com/go-ap/activitypub"
+	vocab "github.com/mix/activitypub"
 )
 
 type err struct {
