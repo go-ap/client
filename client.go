@@ -10,14 +10,13 @@ import (
 	"net/url"
 	"time"
 
-	"git.sr.ht/~mariusor/lw"
 	"github.com/go-ap/errors"
 	"github.com/go-ap/jsonld"
 	vocab "github.com/mix/activitypub"
 	"golang.org/x/oauth2"
 )
 
-type Ctx = lw.Ctx
+type Ctx = map[string]any
 
 type RequestSignFn func(*http.Request) error
 type CtxLogFn func(...Ctx) LogFn
@@ -59,7 +58,7 @@ var (
 type C struct {
 	signFn RequestSignFn
 	c      *http.Client
-	l      lw.Logger
+	l      logger
 	infoFn CtxLogFn
 	errFn  CtxLogFn
 }
@@ -83,15 +82,21 @@ func WithHTTPClient(h *http.Client) OptionFn {
 	}
 }
 
-func WithLogger(l lw.Logger) OptionFn {
+func WithLogger(infoFn func(string, ...interface{}), errorFn func(string, ...interface{})) OptionFn {
 	return func(c *C) error {
-		c.l = l
-		if l != nil {
+		if infoFn == nil && errorFn == nil {
+			return nil
+		}
+		// persist the injected logging functions
+		c.l = logger{infoFn: infoFn, errorFn: errorFn}
+		if infoFn != nil {
 			c.infoFn = func(ctx ...Ctx) LogFn {
-				return l.WithContext(ctx...).Debugf
+				return c.l.WithContext(ctx...).InfoFn
 			}
+		}
+		if errorFn != nil {
 			c.errFn = func(ctx ...Ctx) LogFn {
-				return l.WithContext(ctx...).Warnf
+				return c.l.WithContext(ctx...).ErrorFn
 			}
 		}
 		return nil
@@ -262,7 +267,7 @@ func (c *C) req(ctx context.Context, method string, url, contentType string, bod
 		req.Header.Set("Host", req.URL.Host)
 	}
 	if err := c.signFn(req); err != nil {
-		c.errFn(lw.Ctx{"method": req.Method, "iri": req.URL.String()})("Unable to sign request: %+s", err)
+		c.errFn(Ctx{"method": req.Method, "iri": req.URL.String()})("Unable to sign request: %+s", err)
 	}
 	return req, nil
 }

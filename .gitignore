@@ -1,4 +1,4 @@
-# Gogland 
+# Goland
 .idea/
 
 # Binaries for programs and plugins
@@ -12,3 +12,5 @@
 *.coverprofile
 
 *pkg
+
+vendor
