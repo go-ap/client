@@ -205,8 +205,13 @@ func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusGone {
-		err := errf("Unable to load from the AP end point: invalid status %d", resp.StatusCode).iri(id)
-		c.errFn(errCtx, Ctx{"duration": time.Now().Sub(st)}, Ctx{"status": resp.Status, "headers": resp.Header, "proto": resp.Proto})("Error: %s", err)
+		var body []byte
+		var errReadAll error
+		if body, errReadAll = io.ReadAll(resp.Body); errReadAll != nil {
+			c.errFn(errCtx, Ctx{"duration": time.Now().Sub(st)}, Ctx{"status": resp.Status, "headers": resp.Header, "proto": resp.Proto})("errReadAll: %s", errReadAll)
+		}
+		err := errf("Unable to load from the AP end point: invalid status %d %s", resp.StatusCode, body).iri(id)
+		c.errFn(errCtx, Ctx{"duration": time.Now().Sub(st)}, Ctx{"status": resp.Status, "body": string(body), "headers": resp.Header, "proto": resp.Proto})("Error: %s", err)
 		return obj, err
 	}
 
