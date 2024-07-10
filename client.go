@@ -8,8 +8,11 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"time"
 
+	"git.sr.ht/~mariusor/cache"
 	"git.sr.ht/~mariusor/lw"
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/errors"
@@ -138,7 +141,7 @@ type OptionFn func(s *C) error
 var (
 	defaultClient = &http.Client{
 		Timeout:   10 * time.Second,
-		Transport: defaultTransport,
+		Transport: cachedTransport(defaultTransport),
 	}
 
 	defaultTransport http.RoundTripper = &http.Transport{
@@ -152,6 +155,14 @@ var (
 		TLSHandshakeTimeout: 2500 * time.Millisecond,
 	}
 )
+
+func cachedTransport(t http.RoundTripper) http.RoundTripper {
+	path, err := os.UserCacheDir()
+	if err != nil {
+		path = os.TempDir()
+	}
+	return cache.Wrap(t, cache.FS(filepath.Join(path, UserAgent), 10*time.Minute))
+}
 
 func New(o ...OptionFn) *C {
 	c := &C{
