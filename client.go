@@ -105,11 +105,16 @@ func getTransportWithTLSValidation(rt http.RoundTripper, skip bool) http.RoundTr
 	if rt == nil {
 		rt = defaultTransport
 	}
-	if tr, ok := rt.(*http.Transport); ok {
+	switch tr := rt.(type) {
+	case *http.Transport:
 		if tr.TLSClientConfig == nil {
 			tr.TLSClientConfig = new(tls.Config)
 		}
 		tr.TLSClientConfig.InsecureSkipVerify = skip
+	case *oauth2.Transport:
+		tr.Base = getTransportWithTLSValidation(tr.Base, skip)
+	case cache.Transport:
+		tr.RoundTripper = getTransportWithTLSValidation(tr.RoundTripper, skip)
 	}
 	return rt
 }
@@ -118,9 +123,6 @@ func getTransportWithTLSValidation(rt http.RoundTripper, skip bool) http.RoundTr
 func SkipTLSValidation(skip bool) OptionFn {
 	return func(c *C) error {
 		c.c.Transport = getTransportWithTLSValidation(c.c.Transport, skip)
-		if tr, ok := c.c.Transport.(*oauth2.Transport); ok {
-			tr.Base = getTransportWithTLSValidation(tr.Base, skip)
-		}
 		return nil
 	}
 }
