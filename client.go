@@ -152,6 +152,9 @@ var (
 			// This is the TCP connect timeout in this instance.
 			Timeout: 2500 * time.Millisecond,
 		}).DialContext,
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: false,
+		},
 		TLSHandshakeTimeout: 2500 * time.Millisecond,
 	}
 )
