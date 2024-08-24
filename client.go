@@ -119,7 +119,7 @@ func getTransportWithTLSValidation(rt http.RoundTripper, skip bool) http.RoundTr
 	return rt
 }
 
-// SkipTLSValidation
+// SkipTLSValidation sets the flag for skipping TLS validation on the default HTTP transport.
 func SkipTLSValidation(skip bool) OptionFn {
 	return func(c *C) error {
 		c.c.Transport = getTransportWithTLSValidation(c.c.Transport, skip)
@@ -146,18 +146,16 @@ var (
 		Transport: cachedTransport(defaultTransport),
 	}
 
+	// This is the TCP connect timeout in this instance.
+	longTimeout = 2500 * time.Millisecond
+
 	defaultTransport http.RoundTripper = &http.Transport{
 		MaxIdleConns:        100,
 		IdleConnTimeout:     90 * time.Second,
 		MaxIdleConnsPerHost: 20,
-		DialContext: (&net.Dialer{
-			// This is the TCP connect timeout in this instance.
-			Timeout: 2500 * time.Millisecond,
-		}).DialContext,
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: false,
-		},
-		TLSHandshakeTimeout: 2500 * time.Millisecond,
+		DialContext:         (&net.Dialer{Timeout: longTimeout}).DialContext,
+		TLSClientConfig:     &tls.Config{InsecureSkipVerify: false},
+		TLSHandshakeTimeout: longTimeout,
 	}
 )
 
@@ -166,7 +164,7 @@ func cachedTransport(t http.RoundTripper) http.RoundTripper {
 	if err != nil {
 		path = os.TempDir()
 	}
-	return cache.Wrap(t, cache.FS(filepath.Join(path, UserAgent), 10*time.Minute))
+	return cache.Shared(t, cache.FS(filepath.Join(path, UserAgent)))
 }
 
 func New(o ...OptionFn) *C {
