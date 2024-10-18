@@ -59,9 +59,13 @@ var (
 	defaultSignFn RequestSignFn = func(*http.Request) error { return nil }
 )
 
+type httpClient interface {
+	Do(*http.Request) (*http.Response, error)
+}
+
 type C struct {
 	signFn RequestSignFn
-	c      *http.Client
+	c      httpClient
 	l      lw.Logger
 	infoFn CtxLogFn
 	errFn  CtxLogFn
@@ -73,7 +77,9 @@ type C struct {
 // because we assume it will be executed under the same constraints.
 func SetDefaultHTTPClient() OptionFn {
 	return func(c *C) error {
-		http.DefaultClient = c.c
+		if cl, ok := c.c.(*http.Client); ok {
+			http.DefaultClient = cl
+		}
 		return nil
 	}
 }
@@ -114,7 +120,7 @@ func getTransportWithTLSValidation(rt http.RoundTripper, skip bool) http.RoundTr
 	case *oauth2.Transport:
 		tr.Base = getTransportWithTLSValidation(tr.Base, skip)
 	case cache.Transport:
-		tr.RoundTripper = getTransportWithTLSValidation(tr.RoundTripper, skip)
+		tr.Base = getTransportWithTLSValidation(tr.Base, skip)
 	}
 	return rt
 }
@@ -122,7 +128,9 @@ func getTransportWithTLSValidation(rt http.RoundTripper, skip bool) http.RoundTr
 // SkipTLSValidation sets the flag for skipping TLS validation on the default HTTP transport.
 func SkipTLSValidation(skip bool) OptionFn {
 	return func(c *C) error {
-		c.c.Transport = getTransportWithTLSValidation(c.c.Transport, skip)
+		if cl, ok := c.c.(*http.Client); ok {
+			cl.Transport = getTransportWithTLSValidation(cl.Transport, skip)
+		}
 		return nil
 	}
 }
