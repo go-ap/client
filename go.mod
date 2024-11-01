@@ -6,7 +6,7 @@ require (
 	git.sr.ht/~mariusor/cache v0.0.0-20241026131931-1ae5432a2760
 	git.sr.ht/~mariusor/lw v0.0.0-20240906100438-00d2184b2120
 	github.com/MatejLach/httpsigver-ap v0.2.0
-	github.com/go-ap/activitypub v0.0.0-20240910141749-b4b8c8aa484c
+	github.com/go-ap/activitypub v0.0.0-20241101101514-bc5248bb8442
 	github.com/go-ap/errors v0.0.0-20240910140019-1e9d33cc1568
 	github.com/go-ap/jsonld v0.0.0-20221030091449-f2a191312c73
 	golang.org/x/oauth2 v0.23.0
