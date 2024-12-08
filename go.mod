@@ -6,7 +6,7 @@ require (
 	git.sr.ht/~mariusor/cache v0.0.0-20241026131931-1ae5432a2760
 	git.sr.ht/~mariusor/lw v0.0.0-20241117105956-4b4009e28502
 	github.com/MatejLach/httpsigver-ap v0.2.1
-	github.com/go-ap/activitypub v0.0.0-20241124171425-a40ea88b2b60
+	github.com/go-ap/activitypub v0.0.0-20241208161221-f05aa52782bd
 	github.com/go-ap/errors v0.0.0-20240910140019-1e9d33cc1568
 	github.com/go-ap/jsonld v0.0.0-20221030091449-f2a191312c73
 	golang.org/x/oauth2 v0.24.0
@@ -23,5 +23,5 @@ require (
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/rs/zerolog v1.33.0 // indirect
 	github.com/valyala/fastjson v1.6.4 // indirect
-	golang.org/x/sys v0.27.0 // indirect
+	golang.org/x/sys v0.28.0 // indirect
 )
