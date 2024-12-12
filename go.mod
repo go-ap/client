@@ -3,11 +3,11 @@ module github.com/go-ap/client
 go 1.18
 
 require (
-	git.sr.ht/~mariusor/cache v0.0.0-20241026131931-1ae5432a2760
+	git.sr.ht/~mariusor/cache v0.0.0-20241212154534-e6e4fac0679d
 	git.sr.ht/~mariusor/lw v0.0.0-20241117105956-4b4009e28502
 	github.com/MatejLach/httpsigver-ap v0.2.1
-	github.com/go-ap/activitypub v0.0.0-20241208161221-f05aa52782bd
-	github.com/go-ap/errors v0.0.0-20240910140019-1e9d33cc1568
+	github.com/go-ap/activitypub v0.0.0-20241212161521-36eb87cc3381
+	github.com/go-ap/errors v0.0.0-20241212155021-5a598b6bf467
 	github.com/go-ap/jsonld v0.0.0-20221030091449-f2a191312c73
 	golang.org/x/oauth2 v0.24.0
 )
