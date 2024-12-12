@@ -8,8 +8,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"time"
 
 	"git.sr.ht/~mariusor/cache"
@@ -167,12 +165,10 @@ var (
 	}
 )
 
+const MB = 1024 * 1024 * 1024
+
 func cachedTransport(t http.RoundTripper) http.RoundTripper {
-	path, err := os.UserCacheDir()
-	if err != nil {
-		path = os.TempDir()
-	}
-	return cache.Shared(t, cache.FS(filepath.Join(path, UserAgent)))
+	return cache.Shared(t, cache.Mem(MB))
 }
 
 func New(o ...OptionFn) *C {
@@ -183,7 +179,7 @@ func New(o ...OptionFn) *C {
 		errFn:  defaultCtxLogger,
 	}
 	for _, fn := range o {
-		fn(c)
+		_ = fn(c)
 	}
 	return c
 }

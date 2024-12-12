@@ -3,7 +3,7 @@ module github.com/go-ap/client
 go 1.18
 
 require (
-	git.sr.ht/~mariusor/cache v0.0.0-20241212154534-e6e4fac0679d
+	git.sr.ht/~mariusor/cache v0.0.0-20241212172633-e1563652acb4
 	git.sr.ht/~mariusor/lw v0.0.0-20241117105956-4b4009e28502
 	github.com/MatejLach/httpsigver-ap v0.2.1
 	github.com/go-ap/activitypub v0.0.0-20241212161521-36eb87cc3381
