@@ -173,8 +173,8 @@ func (c *C2S) Client(ctx context.Context, st cache.Storage) *client.C {
 	//  * the cache transport needs to be used on fetches
 	//  * the OAuth2 transport needs to be used on writes
 	if c != nil {
-		if c2scl := c.Config().Client(ctx, c.Token()); c2scl != nil {
-			httpT = c2scl.Transport
+		if tok := c.Token(); tok != nil {
+			httpT = c.Config().Client(ctx, tok).Transport
 		}
 	}
 	httpC.Transport = cache.Private(httpT, st)
