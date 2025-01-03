@@ -112,7 +112,7 @@ func (c C) Actor(ctx context.Context, iri vocab.IRI) (*vocab.Actor, error) {
 		return nil, errors.Annotatef(err, "Unable to load Actor: %s", iri)
 	}
 	var person *vocab.Actor
-	vocab.OnActor(it, func(p *vocab.Actor) error {
+	_ = vocab.OnActor(it, func(p *vocab.Actor) error {
 		person = p
 		return nil
 	})

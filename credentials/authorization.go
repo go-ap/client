@@ -33,7 +33,7 @@ type C2S struct {
 	Tok  *oauth2.Token
 }
 
-func Authorize(actorURL string, auth *url.Userinfo) (*C2S, error) {
+func Authorize(ctx context.Context, actorURL string, auth *url.Userinfo) (*C2S, error) {
 	actorIRI := vocab.IRI(actorURL)
 	if u, _ := actorIRI.URL(); u == nil {
 		actorIRI = vocab.IRI(fmt.Sprintf("https://%s", actorURL))
@@ -43,9 +43,8 @@ func Authorize(actorURL string, auth *url.Userinfo) (*C2S, error) {
 	clientSecret, _ := auth.Password()
 
 	app := new(C2S)
-	get := app.Client()
+	get := app.Client(ctx, cache.Mem(MByte))
 
-	ctx := context.Background()
 	actor, err := get.Actor(ctx, actorIRI)
 	if err != nil {
 		return nil, err
@@ -155,22 +154,32 @@ func getActorOAuthEndpoint(actor vocab.Actor) oauth2.Endpoint {
 	return e
 }
 
+const (
+	KByte = 1024
+	MByte = 1024 * KByte
+)
+
 var DefaultClient = &http.Client{}
 
-const MegaByte = 1024 * 1024 * 1024
-
-func (c *C2S) Client() *client.C {
+func (c *C2S) Client(ctx context.Context, st cache.Storage) *client.C {
 	httpC := DefaultClient
 	if httpC == nil {
 		httpC = &http.Client{}
 	}
-	httpC.Transport = cache.Private(httpC.Transport, cache.Mem(MegaByte))
+
+	var httpT http.RoundTripper = &http.Transport{}
+	// NOTE(marius): I'm not sure in which order we should wrap the OAuth2 and Cached transports
+	// The initial feeling is that they serve different purposes:
+	//  * the cache transport needs to be used on fetches
+	//  * the OAuth2 transport needs to be used on writes
+	if c != nil {
+		if c2scl := c.Config().Client(ctx, c.Token()); c2scl != nil {
+			httpT = c2scl.Transport
+		}
+	}
+	httpC.Transport = cache.Private(httpT, st)
 
 	initFns := []client.OptionFn{client.WithHTTPClient(httpC), client.SetDefaultHTTPClient()}
-	if c != nil {
-		initFns = append(initFns, client.WithSignFn(c.Sign))
-	}
-
 	return client.New(initFns...)
 }
 
