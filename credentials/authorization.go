@@ -55,14 +55,16 @@ func Authorize(ctx context.Context, actorURL string, auth *url.Userinfo) (*C2S, 
 	if actor.ID == "" {
 		return nil, errors.Newf("invalid Actor with empty ID")
 	}
-	if actor.Endpoints == nil {
-		return nil, errors.Newf("unable to load OAuth2 endpoints from Actor")
-	}
-	if vocab.IsNil(actor.Endpoints.OauthAuthorizationEndpoint) {
-		return nil, errors.Newf("unable to load OAuth2 authorization endpoint from Actor")
-	}
-	if vocab.IsNil(actor.Endpoints.OauthTokenEndpoint) {
-		return nil, errors.Newf("unable to load OAuth2 token endpoint from Actor")
+	if actor.Type == vocab.PersonType {
+		if actor.Endpoints == nil {
+			return nil, errors.Newf("unable to load OAuth2 endpoints for Actor")
+		}
+		if vocab.IsNil(actor.Endpoints.OauthAuthorizationEndpoint) {
+			return nil, errors.Newf("unable to load OAuth2 authorization endpoint from Actor")
+		}
+		if vocab.IsNil(actor.Endpoints.OauthTokenEndpoint) {
+			return nil, errors.Newf("unable to load OAuth2 token endpoint from Actor")
+		}
 	}
 
 	app.IRI = actor.ID
