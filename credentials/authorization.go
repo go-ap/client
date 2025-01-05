@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os/exec"
 	"runtime"
 	"time"
@@ -33,14 +32,11 @@ type C2S struct {
 	Tok  *oauth2.Token
 }
 
-func Authorize(ctx context.Context, actorURL string, auth *url.Userinfo) (*C2S, error) {
+func Authorize(ctx context.Context, actorURL string, auth oauth2.Config) (*C2S, error) {
 	actorIRI := vocab.IRI(actorURL)
 	if u, _ := actorIRI.URL(); u == nil {
 		actorIRI = vocab.IRI(fmt.Sprintf("https://%s", actorURL))
 	}
-
-	clientID := auth.Username()
-	clientSecret, _ := auth.Password()
 
 	app := new(C2S)
 	get := app.Client(ctx, cache.Mem(MByte))
@@ -69,8 +65,8 @@ func Authorize(ctx context.Context, actorURL string, auth *url.Userinfo) (*C2S, 
 
 	app.IRI = actor.ID
 	app.Conf = oauth2.Config{
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
+		ClientID:     auth.ClientID,
+		ClientSecret: auth.ClientSecret,
 		Endpoint:     getActorOAuthEndpoint(*actor),
 		RedirectURL:  fmt.Sprintf("http://%s", listenOn),
 	}
@@ -88,7 +84,7 @@ func Authorize(ctx context.Context, actorURL string, auth *url.Userinfo) (*C2S, 
 			return nil, err
 		}
 	case vocab.ApplicationType, vocab.ServiceType, vocab.GroupType:
-		app.Tok, err = app.Conf.PasswordCredentialsToken(ctx, actor.ID.String(), clientSecret)
+		app.Tok, err = app.Conf.PasswordCredentialsToken(ctx, actor.ID.String(), app.Conf.ClientSecret)
 		if err != nil {
 			return nil, err
 		}
@@ -222,7 +218,6 @@ func handleOAuth2Flow(ctx context.Context, app *oauth2.Config) (*oauth2.Token, e
 	if err := openbrowser(authURL); err != nil {
 		slog.With(slog.String("err", err.Error())).Warn("Unable to open browser window.")
 		slog.With(slog.String("url", authURL)).Info("Please manually open the authorization URL in your browser.")
-		//return nil, err
 	} else {
 		fmt.Print("Opened browser window for authorization.\n")
 	}
