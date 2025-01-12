@@ -160,7 +160,7 @@ func validateIRIForRequest(i vocab.IRI) error {
 
 func (c C) ToOutbox(ctx context.Context, a vocab.Item) (vocab.IRI, vocab.Item, error) {
 	var iri vocab.IRI
-	vocab.OnActivity(a, func(a *vocab.Activity) error {
+	_ = vocab.OnActivity(a, func(a *vocab.Activity) error {
 		iri = outbox(a.Actor)
 		return nil
 	})
