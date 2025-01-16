@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"os/exec"
 	"runtime"
 	"time"
@@ -226,6 +225,7 @@ func handleOAuth2Flow(ctx context.Context, app *oauth2.Config) (*oauth2.Token, e
 	if err != nil {
 		return nil, err
 	}
+	defer l.Close()
 
 	type callbackResponse struct {
 		tok string
@@ -251,15 +251,9 @@ func handleOAuth2Flow(ctx context.Context, app *oauth2.Config) (*oauth2.Token, e
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(fmt.Sprintf(errorCallbackHTML, cbErr)))
 	})
-	srv := httptest.Server{
-		Listener:    l,
-		EnableHTTP2: true,
-		Config: &http.Server{
-			Handler: fn,
-		},
-	}
+	srv := &http.Server{Handler: fn}
 
-	go srv.Start()
+	go srv.Serve(l)
 	go dumbProgressBar(ctx)
 	defer srv.Close()
 
