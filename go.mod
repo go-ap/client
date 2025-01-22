@@ -3,7 +3,7 @@ module github.com/go-ap/client
 go 1.18
 
 require (
-	git.sr.ht/~mariusor/cache v0.0.0-20241212172633-e1563652acb4
+	git.sr.ht/~mariusor/cache v0.0.0-20250122165545-14c90d7a9de8
 	git.sr.ht/~mariusor/lw v0.0.0-20250114195945-ba9c7bcca3c1
 	github.com/go-ap/activitypub v0.0.0-20250112165501-7b898763a1e9
 	github.com/go-ap/errors v0.0.0-20241212155021-5a598b6bf467
