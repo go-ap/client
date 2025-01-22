@@ -19,7 +19,7 @@ var ErrorHandler ErrorHandlerFunc = func(errors ...error) http.HandlerFunc {
 		}
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Header().Add("Content-Type", "text/plain")
-		w.Write(output.Bytes())
+		_, _ = w.Write(output.Bytes())
 	}
 }
 

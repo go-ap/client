@@ -176,7 +176,7 @@ func (c *C2S) Client(ctx context.Context, st cache.Storage) *client.C {
 	}
 	httpC.Transport = cache.Private(httpT, st)
 
-	initFns := []client.OptionFn{client.WithHTTPClient(httpC) /*, client.SetDefaultHTTPClient()*/}
+	initFns := []client.OptionFn{client.WithHTTPClient(httpC), client.SkipTLSValidation(true)}
 	return client.New(initFns...)
 }
 
