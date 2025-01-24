@@ -6,14 +6,6 @@ import (
 	vocab "github.com/go-ap/activitypub"
 )
 
-func TestNew(t *testing.T) {
-	c := New()
-
-	if c.signFn == nil {
-		t.Errorf("New didn't return a valid client, nil Sign function")
-	}
-}
-
 func TestClient_LoadIRI(t *testing.T) {
 	empty := vocab.IRI("")
 	c := New()

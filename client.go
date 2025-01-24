@@ -13,6 +13,7 @@ import (
 	"git.sr.ht/~mariusor/cache"
 	"git.sr.ht/~mariusor/lw"
 	vocab "github.com/go-ap/activitypub"
+	"github.com/go-ap/client/s2s"
 	"github.com/go-ap/errors"
 	"github.com/go-ap/jsonld"
 	"golang.org/x/oauth2"
@@ -24,12 +25,7 @@ type RequestSignFn func(*http.Request) error
 type CtxLogFn func(...Ctx) LogFn
 type LogFn func(string, ...interface{})
 
-type CanSign interface {
-	SignFn(fn RequestSignFn)
-}
-
 type Basic interface {
-	CanSign
 	LoadIRI(vocab.IRI) (vocab.Item, error)
 	CtxLoadIRI(context.Context, vocab.IRI) (vocab.Item, error)
 	ToCollection(vocab.IRI, vocab.Item) (vocab.IRI, vocab.Item, error)
@@ -53,8 +49,6 @@ var (
 	defaultLogger LogFn = func(s string, el ...interface{}) {}
 
 	defaultCtxLogger CtxLogFn = func(ctx ...Ctx) LogFn { return defaultLogger }
-
-	defaultSignFn RequestSignFn = func(*http.Request) error { return nil }
 )
 
 type httpClient interface {
@@ -62,7 +56,6 @@ type httpClient interface {
 }
 
 type C struct {
-	signFn RequestSignFn
 	c      httpClient
 	l      lw.Logger
 	infoFn CtxLogFn
@@ -115,6 +108,8 @@ func getTransportWithTLSValidation(rt http.RoundTripper, skip bool) http.RoundTr
 			tr.TLSClientConfig = new(tls.Config)
 		}
 		tr.TLSClientConfig.InsecureSkipVerify = skip
+	case *s2s.HTTPSignatureTransport:
+		tr.Base = getTransportWithTLSValidation(tr.Base, skip)
 	case *oauth2.Transport:
 		tr.Base = getTransportWithTLSValidation(tr.Base, skip)
 	case cache.Transport:
@@ -128,16 +123,6 @@ func SkipTLSValidation(skip bool) OptionFn {
 	return func(c *C) error {
 		if cl, ok := c.c.(*http.Client); ok {
 			cl.Transport = getTransportWithTLSValidation(cl.Transport, skip)
-		}
-		return nil
-	}
-}
-
-// WithSignFn
-func WithSignFn(fn RequestSignFn) OptionFn {
-	return func(c *C) error {
-		if fn != nil {
-			c.signFn = fn
 		}
 		return nil
 	}
@@ -174,7 +159,6 @@ func cachedTransport(t http.RoundTripper) http.RoundTripper {
 func New(o ...OptionFn) *C {
 	c := &C{
 		c:      defaultClient,
-		signFn: defaultSignFn,
 		infoFn: defaultCtxLogger,
 		errFn:  defaultCtxLogger,
 	}
@@ -182,13 +166,6 @@ func New(o ...OptionFn) *C {
 		_ = fn(c)
 	}
 	return c
-}
-
-func (c *C) SignFn(fn RequestSignFn) {
-	if fn == nil {
-		return
-	}
-	c.signFn = fn
 }
 
 func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
@@ -230,7 +207,28 @@ func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 	}
 	c.infoFn(errCtx, Ctx{"duration": time.Now().Sub(st), "status": resp.Status})("OK")
 
-	return vocab.UnmarshalJSON(body)
+	it, err := vocab.UnmarshalJSON(body)
+	if err != nil {
+		return nil, err
+	}
+
+	if it != nil {
+		// NOTE(marius): success
+		return it, nil
+	}
+
+	// NOTE(marius): the body didn't have a recognizable ActivityPub document,
+	// maybe it's an error due to being deleted
+	if resp.StatusCode == http.StatusGone {
+		e, err := errors.UnmarshalJSON(body)
+		if err != nil || len(e) == 0 {
+			return it, errors.Gonef("gone")
+		}
+
+		return it, errors.NewGone(e[0], "unable to load IRI: %s", id)
+	}
+
+	return nil, errors.NotImplementedf("invalid response from ActivityPub server, not a document and not an error: %s", id)
 }
 
 // CtxLoadIRI tries to dereference an IRI and load the full ActivityPub object it represents
@@ -278,9 +276,6 @@ func (c *C) req(ctx context.Context, method string, url, contentType string, bod
 	}
 	if host := req.Header.Get("Host"); host == "" {
 		req.Header.Set("Host", req.URL.Host)
-	}
-	if err := c.signFn(req); err != nil {
-		c.errFn(lw.Ctx{"method": req.Method, "iri": req.URL.String()})("Unable to sign request: %+s", err)
 	}
 	return req, nil
 }
@@ -379,4 +374,15 @@ func (c C) ToCollection(url vocab.IRI, a vocab.Item) (vocab.IRI, vocab.Item, err
 // CtxToCollection
 func (c C) CtxToCollection(ctx context.Context, url vocab.IRI, a vocab.Item) (vocab.IRI, vocab.Item, error) {
 	return c.toCollection(ctx, url, a)
+}
+
+func HTTPClient(c C) *http.Client {
+	switch httpC := c.c.(type) {
+	case *C:
+		return HTTPClient(*httpC)
+	case *http.Client:
+		return httpC
+	default:
+		return nil
+	}
 }

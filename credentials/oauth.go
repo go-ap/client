@@ -31,14 +31,24 @@ type C2S struct {
 	Tok  *oauth2.Token
 }
 
-func Authorize(ctx context.Context, actorURL string, auth oauth2.Config) (*C2S, error) {
+type ClientConfig struct {
+	ClientID     string
+	ClientSecret string
+	RedirectURL  string
+}
+
+func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, error) {
 	actorIRI := vocab.IRI(actorURL)
 	if u, _ := actorIRI.URL(); u == nil {
 		actorIRI = vocab.IRI(fmt.Sprintf("https://%s", actorURL))
 	}
 
 	app := new(C2S)
-	get := app.Client(ctx, cache.Mem(MByte))
+	httpC := Client(ctx, app, cache.Mem(MByte))
+	get := client.New(
+		client.WithHTTPClient(httpC),
+		client.SkipTLSValidation(true),
+	)
 
 	actor, err := get.Actor(ctx, actorIRI)
 	if err != nil {
@@ -70,6 +80,10 @@ func Authorize(ctx context.Context, actorURL string, auth oauth2.Config) (*C2S, 
 		RedirectURL:  fmt.Sprintf("http://%s", listenOn),
 	}
 
+	// Set up the default HTTP client for the oauth2 module
+	// which gets used by both Person and Application authorization flows.
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, httpC)
+
 	var tok *oauth2.Token
 	switch actor.Type {
 	case vocab.PersonType:
@@ -77,7 +91,6 @@ func Authorize(ctx context.Context, actorURL string, auth oauth2.Config) (*C2S, 
 		if err != nil {
 			return nil, err
 		}
-		ctx = context.WithValue(ctx, oauth2.HTTPClient, get)
 		app.Tok, err = app.Conf.TokenSource(ctx, tok).Token()
 		if err != nil {
 			return nil, err
@@ -158,7 +171,14 @@ const (
 
 var DefaultClient = &http.Client{}
 
-func (c *C2S) Client(ctx context.Context, st cache.Storage) *client.C {
+func (c *C2S) Transport(ctx context.Context) http.RoundTripper {
+	if tok := c.Token(); tok != nil {
+		return c.Config().Client(ctx, tok).Transport
+	}
+	return &http.Transport{}
+}
+
+func Client(ctx context.Context, c *C2S, st cache.Storage) *http.Client {
 	httpC := DefaultClient
 	if httpC == nil {
 		httpC = &http.Client{}
@@ -176,8 +196,7 @@ func (c *C2S) Client(ctx context.Context, st cache.Storage) *client.C {
 	}
 	httpC.Transport = cache.Private(httpT, st)
 
-	initFns := []client.OptionFn{client.WithHTTPClient(httpC), client.SkipTLSValidation(true)}
-	return client.New(initFns...)
+	return httpC
 }
 
 func openbrowser(url string) error {
@@ -210,6 +229,7 @@ func dumbProgressBar(ctx context.Context) {
 		}
 	}
 }
+
 func handleOAuth2Flow(ctx context.Context, app *oauth2.Config) (*oauth2.Token, error) {
 	state := ""
 
