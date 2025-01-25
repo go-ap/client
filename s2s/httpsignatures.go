@@ -6,8 +6,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
 	"io"
 	"net/http"
 	"time"
@@ -66,14 +64,8 @@ func (s *HTTPSignatureTransport) signRequest(req *http.Request) error {
 	}
 
 	algos := make([]httpsig.Algorithm, 0)
-	switch prv := s.Key.(type) {
+	switch s.Key.(type) {
 	case *rsa.PrivateKey:
-		w := bytes.Buffer{}
-		mPKey := x509.MarshalPKCS1PrivateKey(prv)
-		err = pem.Encode(&w, &pem.Block{
-			Type:  "RSA PRIVATE KEY",
-			Bytes: mPKey,
-		})
 		algos = append(algos, httpsig.RSA_SHA256, httpsig.RSA_SHA512)
 	case *ecdsa.PrivateKey:
 		algos = append(algos, httpsig.ECDSA_SHA512, httpsig.ECDSA_SHA256)
@@ -81,7 +73,7 @@ func (s *HTTPSignatureTransport) signRequest(req *http.Request) error {
 		algos = append(algos, httpsig.ED25519)
 	}
 
-	signer, _, err := httpsig.NewSigner(algos, digestAlgorithm, headers, httpsig.Signature, signatureExpiration)
+	signer, _, err := httpsig.NewSigner(algos, digestAlgorithm, headers, httpsig.Authorization, signatureExpiration)
 	if err != nil {
 		return err
 	}
