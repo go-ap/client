@@ -73,7 +73,8 @@ func (s *HTTPSignatureTransport) signRequest(req *http.Request) error {
 		algos = append(algos, httpsig.ED25519)
 	}
 
-	signer, _, err := httpsig.NewSigner(algos, digestAlgorithm, headers, httpsig.Authorization, signatureExpiration)
+	// NOTE(marius): The only http-signatures accepted by Mastodon instances is "Signature", not "Authorization"
+	signer, _, err := httpsig.NewSigner(algos, digestAlgorithm, headers, httpsig.Signature, signatureExpiration)
 	if err != nil {
 		return err
 	}
