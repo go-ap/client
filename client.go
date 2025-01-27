@@ -56,6 +56,7 @@ type httpClient interface {
 }
 
 type C struct {
+	ua     string
 	c      httpClient
 	l      lw.Logger
 	infoFn CtxLogFn
@@ -79,6 +80,14 @@ func SetDefaultHTTPClient() OptionFn {
 func WithHTTPClient(h *http.Client) OptionFn {
 	return func(c *C) error {
 		c.c = h
+		return nil
+	}
+}
+
+// WithUserAgent sets the user-agent header for all requests done with this client
+func WithUserAgent(ua string) OptionFn {
+	return func(c *C) error {
+		c.ua = ua
 		return nil
 	}
 }
@@ -158,6 +167,7 @@ func cachedTransport(t http.RoundTripper) http.RoundTripper {
 
 func New(o ...OptionFn) *C {
 	c := &C{
+		ua:     UserAgent,
 		c:      defaultClient,
 		infoFn: defaultCtxLogger,
 		errFn:  defaultCtxLogger,
