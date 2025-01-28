@@ -140,7 +140,7 @@ func (c C) Object(ctx context.Context, iri vocab.IRI) (*vocab.Object, error) {
 		return nil, errors.Annotatef(err, "Unable to load Object: %s", iri)
 	}
 	var object *vocab.Object
-	vocab.OnObject(it, func(o *vocab.Object) error {
+	_ = vocab.OnObject(it, func(o *vocab.Object) error {
 		object = o
 		return nil
 	})
