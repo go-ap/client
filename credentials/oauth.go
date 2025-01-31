@@ -10,7 +10,6 @@ import (
 	"runtime"
 	"time"
 
-	"git.sr.ht/~mariusor/cache"
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/client"
 	"github.com/go-ap/errors"
@@ -44,7 +43,7 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 	}
 
 	app := new(C2S)
-	httpC := Client(ctx, app, cache.Mem(MByte))
+	httpC := Client(ctx, app)
 	get := client.New(
 		client.WithHTTPClient(httpC),
 		client.SkipTLSValidation(true),
@@ -178,23 +177,21 @@ func (c *C2S) Transport(ctx context.Context) http.RoundTripper {
 	return &http.Transport{}
 }
 
-func Client(ctx context.Context, c *C2S, st cache.Storage) *http.Client {
+func Client(ctx context.Context, c *C2S) *http.Client {
 	httpC := DefaultClient
 	if httpC == nil {
 		httpC = &http.Client{}
 	}
 
-	var httpT http.RoundTripper = &http.Transport{}
 	// NOTE(marius): I'm not sure in which order we should wrap the OAuth2 and Cached transports
 	// The initial feeling is that they serve different purposes:
 	//  * the cache transport needs to be used on fetches
 	//  * the OAuth2 transport needs to be used on writes
 	if c != nil {
 		if tok := c.Token(); tok != nil {
-			httpT = c.Config().Client(ctx, tok).Transport
+			httpC.Transport = c.Config().Client(ctx, tok).Transport
 		}
 	}
-	httpC.Transport = cache.Private(httpT, st)
 
 	return httpC
 }
