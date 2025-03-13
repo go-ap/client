@@ -270,7 +270,7 @@ func (c *C) req(ctx context.Context, method string, url, contentType string, bod
 	if err != nil {
 		return req, err
 	}
-	req.Header.Set("User-Agent", UserAgent)
+	req.Header.Set("User-Agent", c.ua)
 	if method == http.MethodGet || method == http.MethodHead {
 		req.Header.Add("Accept", ContentTypeJsonLD)
 		req.Header.Add("Accept", ContentTypeActivityJson)
