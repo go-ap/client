@@ -301,19 +301,21 @@ func (c C) do(ctx context.Context, url, method, contentType string, body io.Read
 	return c.Do(req)
 }
 
+const contentTypeAny = "*/*"
+
 // Head
 func (c C) Head(url string) (*http.Response, error) {
-	return c.do(context.Background(), url, http.MethodHead, "", nil)
+	return c.do(context.Background(), url, http.MethodHead, contentTypeAny, nil)
 }
 
 // CtxGet wrapper over the functionality offered by the default http.Client object
 func (c C) CtxGet(ctx context.Context, url string) (*http.Response, error) {
-	return c.do(ctx, url, http.MethodGet, "", nil)
+	return c.do(ctx, url, http.MethodGet, contentTypeAny, nil)
 }
 
 // Get wrapper over the functionality offered by the default http.Client object
 func (c C) Get(url string) (*http.Response, error) {
-	return c.do(context.Background(), url, http.MethodGet, "", nil)
+	return c.do(context.Background(), url, http.MethodGet, contentTypeAny, nil)
 }
 
 // CtxPost wrapper over the functionality offered by the default http.Client object
