@@ -1,6 +1,6 @@
 module github.com/go-ap/client
 
-go 1.23
+go 1.23.0
 
 require (
 	git.sr.ht/~mariusor/cache v0.0.0-20250122165545-14c90d7a9de8
@@ -25,7 +25,7 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mschoch/smat v0.2.0 // indirect
 	github.com/rs/xid v1.6.0 // indirect
-	github.com/rs/zerolog v1.33.0 // indirect
+	github.com/rs/zerolog v1.34.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/valyala/fastjson v1.6.4 // indirect
 	golang.org/x/crypto v0.36.0 // indirect
