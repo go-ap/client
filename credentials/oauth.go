@@ -235,7 +235,7 @@ func handleOAuth2Flow(ctx context.Context, app *oauth2.Config) (*oauth2.Token, e
 		slog.With(slog.String("err", err.Error())).Warn("Unable to open browser window.")
 		slog.With(slog.String("url", authURL)).Info("Please manually open the authorization URL in your browser.")
 	} else {
-		fmt.Print("Opened browser window for authorization.\n")
+		fmt.Printf("Opened browser window for authorization: %s.\n", authURL)
 	}
 
 	l, err := net.Listen("tcp", listenOn)
