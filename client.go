@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"time"
 
 	"git.sr.ht/~mariusor/cache"
@@ -184,7 +183,7 @@ func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 	if len(id) == 0 {
 		return nil, errf("Invalid IRI, nil value").iri(id)
 	}
-	if _, err := url.ParseRequestURI(id.String()); err != nil {
+	if _, err := id.URL(); err != nil {
 		return nil, errf("Trying to load an invalid IRI").iri(id).annotate(err)
 	}
 	var err error
