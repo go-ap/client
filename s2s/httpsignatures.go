@@ -17,7 +17,6 @@ import (
 
 var (
 	digestAlgorithm     = httpsig.DigestSha256
-	headersToSign       = []string{httpsig.RequestTarget, "host", "date"}
 	signatureExpiration = int64(time.Hour.Seconds())
 )
 
