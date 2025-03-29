@@ -30,8 +30,8 @@ type HTTPSignatureTransport struct {
 	Actor *vocab.Actor
 }
 
-func S2SWrapTransport(base http.RoundTripper, actor *vocab.Actor, key crypto.PrivateKey) HTTPSignatureTransport {
-	return HTTPSignatureTransport{
+func WrapTransport(base http.RoundTripper, actor *vocab.Actor, key crypto.PrivateKey) *HTTPSignatureTransport {
+	return &HTTPSignatureTransport{
 		Base:  base,
 		Key:   key,
 		Actor: actor,
