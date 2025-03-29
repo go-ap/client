@@ -8,11 +8,11 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
-	"fmt"
 	"io"
 	"net/http"
 	"time"
 
+	"git.sr.ht/~mariusor/lw"
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/errors"
 	"github.com/go-fed/httpsig"
@@ -28,14 +28,41 @@ type HTTPSignatureTransport struct {
 
 	Key   crypto.PrivateKey
 	Actor *vocab.Actor
+
+	l lw.Logger
 }
 
-func WrapTransport(base http.RoundTripper, actor *vocab.Actor, key crypto.PrivateKey) *HTTPSignatureTransport {
-	return &HTTPSignatureTransport{
-		Base:  base,
-		Key:   key,
-		Actor: actor,
+type OptionFn func(transport *HTTPSignatureTransport) error
+
+func WithTransport(tr http.RoundTripper) OptionFn {
+	return func(h *HTTPSignatureTransport) error {
+		h.Base = tr
+		return nil
 	}
+}
+
+func WithActor(act *vocab.Actor, prv crypto.PrivateKey) OptionFn {
+	return func(h *HTTPSignatureTransport) error {
+		h.Actor = act
+		h.Key = prv
+		return nil
+	}
+}
+
+func WithLogger(l lw.Logger) OptionFn {
+	return func(h *HTTPSignatureTransport) error {
+		h.l = l
+		return nil
+	}
+}
+
+func New(initFns ...OptionFn) *HTTPSignatureTransport {
+	h := new(HTTPSignatureTransport)
+	h.Base = &http.Transport{}
+	for _, fn := range initFns {
+		_ = fn(h)
+	}
+	return h
 }
 
 // RoundTrip dispatches the received request after signing it
@@ -43,11 +70,10 @@ func (s *HTTPSignatureTransport) RoundTrip(req *http.Request) (*http.Response, e
 	or := req
 	attemptUnauthorized := false
 
-	var signErr error
 	if s.Actor != nil {
 		req = cloneRequest(or) // per RoundTripper contract
-		if err := s.signRequest(req); err != nil {
-			signErr = fmt.Errorf("unable to sign request: %w", err)
+		if err := s.signRequest(req); err != nil && s.l != nil {
+			s.l.WithContext(lw.Ctx{"err": err.Error()}).Errorf("unable to sign request")
 		}
 
 		// NOTE(marius): for GET/HEAD requests we should try again without the authorization header
@@ -56,8 +82,8 @@ func (s *HTTPSignatureTransport) RoundTrip(req *http.Request) (*http.Response, e
 	}
 
 	res1, err := s.Base.RoundTrip(req)
-	if !attemptUnauthorized {
-		return res1, errors.Join(err, signErr)
+	if !attemptUnauthorized || err == nil {
+		return res1, err
 	}
 
 	// NOTE(marius): if we received an actual error we try the request again, but unsigned.
@@ -68,8 +94,7 @@ func (s *HTTPSignatureTransport) RoundTrip(req *http.Request) (*http.Response, e
 	// I detailed that faulty behaviour in ticket:
 	//  https://todo.sr.ht/~mariusor/go-activitypub/301
 	req = cloneRequest(or) // per RoundTripper contract
-	res1, err = s.Base.RoundTrip(req)
-	return res1, errors.Join(err, signErr)
+	return s.Base.RoundTrip(req)
 }
 
 func toCryptoPublicKey(key vocab.PublicKey) (crypto.PublicKey, error) {
