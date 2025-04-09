@@ -8,8 +8,10 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"git.sr.ht/~mariusor/lw"
@@ -65,15 +67,38 @@ func New(initFns ...OptionFn) *HTTPSignatureTransport {
 	return h
 }
 
+type privateKey interface {
+	Public() crypto.PublicKey
+}
+
+func pemEncodePublicKey(prvKey crypto.PrivateKey) string {
+	prv, ok := prvKey.(privateKey)
+	if !ok {
+		return fmt.Sprintf("invalid private key: %T", prvKey)
+	}
+	pubEnc, err := x509.MarshalPKIXPublicKey(prv.Public())
+	if err != nil {
+		return "invalid public key: %s" + err.Error()
+	}
+	p := pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: pubEnc,
+	}
+	return strings.ReplaceAll(string(pem.EncodeToMemory(&p)), "\n", "")
+}
+
 // RoundTrip dispatches the received request after signing it
 func (s *HTTPSignatureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	or := req
 	attemptUnauthorized := false
 
 	if s.Actor != nil {
+		lctx := lw.Ctx{"key": pemEncodePublicKey(s.Key), "actor": s.Actor.ID}
 		req = cloneRequest(or) // per RoundTripper contract
 		if err := s.signRequest(req); err != nil && s.l != nil {
-			s.l.WithContext(lw.Ctx{"err": err.Error()}).Errorf("unable to sign request")
+			s.l.WithContext(lctx, lw.Ctx{"err": err.Error()}).Errorf("unable to sign request")
+		} else {
+			s.l.WithContext(lctx).Debugf("signed request")
 		}
 
 		// NOTE(marius): for GET/HEAD requests we should try again without the authorization header
