@@ -31,6 +31,7 @@ type C2S struct {
 }
 
 type ClientConfig struct {
+	UserAgent    string
 	ClientID     string
 	ClientSecret string
 	RedirectURL  string
@@ -44,10 +45,14 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 
 	app := new(C2S)
 	httpC := Client(ctx, app)
-	get := client.New(
+	initFns := []client.OptionFn{
 		client.WithHTTPClient(httpC),
 		client.SkipTLSValidation(true),
-	)
+	}
+	if auth.UserAgent != "" {
+		initFns = append(initFns, client.WithUserAgent(auth.UserAgent))
+	}
+	get := client.New(initFns...)
 
 	actor, err := get.Actor(ctx, actorIRI)
 	if err != nil {
