@@ -43,10 +43,11 @@ const (
 	ContentTypeActivityJson = `application/activity+json`
 )
 
-// defaultLogger
 var (
+	// defaultLogger is a nil logging function that is set as default.
 	defaultLogger LogFn = func(s string, el ...interface{}) {}
 
+	// defaultCtxLogger is the nil context logging function that is set as default.
 	defaultCtxLogger CtxLogFn = func(ctx ...Ctx) LogFn { return defaultLogger }
 )
 
@@ -355,9 +356,11 @@ func (c C) toCollection(ctx context.Context, url vocab.IRI, a vocab.Item) (vocab
 	iri = vocab.IRI(resp.Header.Get("Location"))
 
 	if resp.StatusCode >= http.StatusBadRequest && resp.StatusCode != http.StatusGone {
-		err := errors.FromResponse(resp)
-		c.errFn(Ctx{"iri": url, "status": resp.Status})(err.Error())
-		return iri, nil, errf("invalid status received: %d", resp.StatusCode).iri(iri).annotate(err)
+		if err := errors.FromResponse(resp); err != nil {
+			c.errFn(Ctx{"iri": url, "status": resp.Status, "err": err.Error()})("HTTP status error")
+			err = errf("invalid status received: %d", resp.StatusCode).iri(iri).annotate(err)
+		}
+		return iri, nil, err
 	}
 	// NOTE(marius): here we might want to group the Close with a Flush of the
 	// Body using io.Copy(ioutil.Discard, resp.Body)
