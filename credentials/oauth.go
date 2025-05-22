@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"time"
 
+	"git.sr.ht/~mariusor/cache"
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/client"
 	"github.com/go-ap/errors"
@@ -43,14 +44,17 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 		actorIRI = vocab.IRI(fmt.Sprintf("https://%s", actorURL))
 	}
 
+	transport := client.UserAgentTransport(auth.UserAgent, cache.Private(http.DefaultTransport, cache.Mem(MByte)))
+	// Set up the default HTTP client for the oauth2 module
+	// which gets used by both Person and Application authorization flows.
+	plainHTTPClient := &http.Client{Transport: transport}
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, plainHTTPClient)
+
 	app := new(C2S)
-	httpC := Client(ctx, app)
+	httpC := OAuth2Client(ctx, app)
 	initFns := []client.OptionFn{
 		client.WithHTTPClient(httpC),
 		client.SkipTLSValidation(true),
-	}
-	if auth.UserAgent != "" {
-		initFns = append(initFns, client.WithUserAgent(auth.UserAgent))
 	}
 	get := client.New(initFns...)
 
@@ -83,10 +87,6 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 		Endpoint:     getActorOAuthEndpoint(*actor),
 		RedirectURL:  fmt.Sprintf("http://%s", listenOn),
 	}
-
-	// Set up the default HTTP client for the oauth2 module
-	// which gets used by both Person and Application authorization flows.
-	ctx = context.WithValue(ctx, oauth2.HTTPClient, httpC)
 
 	var tok *oauth2.Token
 	switch actor.Type {
@@ -182,8 +182,11 @@ func (c *C2S) Transport(ctx context.Context) http.RoundTripper {
 	return &http.Transport{}
 }
 
-func Client(ctx context.Context, c *C2S) *http.Client {
+func OAuth2Client(ctx context.Context, c *C2S) *http.Client {
 	httpC := DefaultClient
+	if oauthCl, ok := ctx.Value(oauth2.HTTPClient).(*http.Client); ok {
+		httpC = oauthCl
+	}
 	if httpC == nil {
 		httpC = &http.Client{}
 	}

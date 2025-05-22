@@ -32,7 +32,7 @@ type Basic interface {
 }
 
 // UserAgent value that the client uses when performing requests
-var UserAgent = "activitypub-go-http-client"
+var UserAgent = "GoActivityPub DefaultClient (https://github.com/go-ap)"
 
 const (
 	ContentTypeJsonLD = `application/ld+json; profile="https://www.w3.org/ns/activitystreams"`
@@ -56,7 +56,6 @@ type httpClient interface {
 }
 
 type C struct {
-	ua     string
 	c      httpClient
 	l      lw.Logger
 	infoFn CtxLogFn
@@ -80,14 +79,6 @@ func SetDefaultHTTPClient() OptionFn {
 func WithHTTPClient(h *http.Client) OptionFn {
 	return func(c *C) error {
 		c.c = h
-		return nil
-	}
-}
-
-// WithUserAgent sets the user-agent header for all requests done with this client
-func WithUserAgent(ua string) OptionFn {
-	return func(c *C) error {
-		c.ua = ua
 		return nil
 	}
 }
@@ -123,6 +114,8 @@ func getTransportWithTLSValidation(rt http.RoundTripper, skip bool) http.RoundTr
 		tr.Base = getTransportWithTLSValidation(tr.Base, skip)
 	case cache.Transport:
 		tr.Base = getTransportWithTLSValidation(tr.Base, skip)
+	case uaTransport:
+		tr.Base = getTransportWithTLSValidation(tr.Base, skip)
 	}
 	return rt
 }
@@ -149,13 +142,16 @@ var (
 	// This is the TCP connect timeout in this instance.
 	longTimeout = 2500 * time.Millisecond
 
-	defaultTransport http.RoundTripper = &http.Transport{
-		MaxIdleConns:        100,
-		IdleConnTimeout:     90 * time.Second,
-		MaxIdleConnsPerHost: 20,
-		DialContext:         (&net.Dialer{Timeout: longTimeout}).DialContext,
-		TLSClientConfig:     &tls.Config{InsecureSkipVerify: false},
-		TLSHandshakeTimeout: longTimeout,
+	defaultTransport http.RoundTripper = uaTransport{
+		Base: &http.Transport{
+			MaxIdleConns:        100,
+			IdleConnTimeout:     90 * time.Second,
+			MaxIdleConnsPerHost: 20,
+			DialContext:         (&net.Dialer{Timeout: longTimeout}).DialContext,
+			TLSClientConfig:     &tls.Config{InsecureSkipVerify: false},
+			TLSHandshakeTimeout: longTimeout,
+		},
+		ua: UserAgent,
 	}
 )
 
@@ -167,7 +163,6 @@ func cachedTransport(t http.RoundTripper) http.RoundTripper {
 
 func New(o ...OptionFn) *C {
 	c := &C{
-		ua:     UserAgent,
 		c:      defaultClient,
 		infoFn: defaultCtxLogger,
 		errFn:  defaultCtxLogger,
@@ -270,7 +265,6 @@ func (c *C) req(ctx context.Context, method string, url, contentType string, bod
 	if err != nil {
 		return req, err
 	}
-	req.Header.Set("User-Agent", c.ua)
 	if method == http.MethodGet || method == http.MethodHead {
 		req.Header.Add("Accept", ContentTypeJsonLD)
 		req.Header.Add("Accept", ContentTypeActivityJson)
