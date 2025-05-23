@@ -3,13 +3,10 @@ package client
 import (
 	"context"
 	"fmt"
-	"net/url"
 
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/errors"
 )
-
-type FilterFn func() url.Values
 
 type PubGetter interface {
 	Inbox(ctx context.Context, actor vocab.Item, filters ...FilterFn) (vocab.CollectionInterface, error)
@@ -147,17 +144,6 @@ func (c C) Object(ctx context.Context, iri vocab.IRI) (*vocab.Object, error) {
 	return object, nil
 }
 
-func validateIRIForRequest(i vocab.IRI) error {
-	u, err := i.URL()
-	if err != nil {
-		return err
-	}
-	if u.Host == "" {
-		return errors.Newf("Host is empty")
-	}
-	return nil
-}
-
 func (c C) ToOutbox(ctx context.Context, a vocab.Item) (vocab.IRI, vocab.Item, error) {
 	var iri vocab.IRI
 	_ = vocab.OnActivity(a, func(a *vocab.Activity) error {
@@ -181,6 +167,17 @@ func (c C) ToInbox(ctx context.Context, a vocab.Item) (vocab.IRI, vocab.Item, er
 		return "", nil, errors.Annotatef(err, "Invalid Inbox IRI")
 	}
 	return c.CtxToCollection(ctx, iri, a)
+}
+
+func validateIRIForRequest(i vocab.IRI) error {
+	u, err := i.URL()
+	if err != nil {
+		return err
+	}
+	if u.Host == "" {
+		return errors.Newf("Host is empty")
+	}
+	return nil
 }
 
 func (c C) collection(ctx context.Context, i vocab.IRI) (vocab.CollectionInterface, error) {
@@ -212,54 +209,47 @@ func (c C) collection(ctx context.Context, i vocab.IRI) (vocab.CollectionInterfa
 	}
 	return col, nil
 }
+
 func (c C) object(ctx context.Context, i vocab.IRI) (vocab.Item, error) {
 	return c.CtxLoadIRI(ctx, i)
 }
 
-func rawFilterQuery(f ...FilterFn) string {
-	if len(f) == 0 {
-		return ""
-	}
-	q := make(url.Values)
-	for _, ff := range f {
-		qq := ff()
-		for k, v := range qq {
-			q[k] = append(q[k], v...)
-		}
-	}
-	if len(q) == 0 {
-		return ""
-	}
-
-	return "?" + q.Encode()
-}
 func iri(i vocab.IRI, f ...FilterFn) vocab.IRI {
 	return vocab.IRI(fmt.Sprintf("%s%s", i, rawFilterQuery(f...)))
 }
+
 func inbox(a vocab.Item, f ...FilterFn) vocab.IRI {
 	return iri(vocab.Inbox.IRI(a), f...)
 }
+
 func outbox(a vocab.Item, f ...FilterFn) vocab.IRI {
 	return iri(vocab.Outbox.IRI(a), f...)
 }
+
 func following(a vocab.Item, f ...FilterFn) vocab.IRI {
 	return iri(vocab.Following.IRI(a), f...)
 }
+
 func followers(a vocab.Item, f ...FilterFn) vocab.IRI {
 	return iri(vocab.Followers.IRI(a), f...)
 }
+
 func liked(a vocab.Item, f ...FilterFn) vocab.IRI {
 	return iri(vocab.Liked.IRI(a), f...)
 }
+
 func likes(o vocab.Item, f ...FilterFn) vocab.IRI {
 	return iri(vocab.Likes.IRI(o), f...)
 }
+
 func shares(o vocab.Item, f ...FilterFn) vocab.IRI {
 	return iri(vocab.Shares.IRI(o), f...)
 }
+
 func replies(o vocab.Item, f ...FilterFn) vocab.IRI {
 	return iri(vocab.Replies.IRI(o), f...)
 }
+
 func validateActor(a vocab.Item) error {
 	if vocab.IsNil(a) {
 		return errors.Errorf("Actor is nil")
@@ -269,6 +259,7 @@ func validateActor(a vocab.Item) error {
 	}
 	return nil
 }
+
 func validateObject(o vocab.Item) error {
 	if vocab.IsNil(o) {
 		return errors.Errorf("object is nil")
