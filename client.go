@@ -230,7 +230,7 @@ func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 			return it, errors.Gonef("gone")
 		}
 
-		return it, errors.NewGone(e[0], "unable to load IRI: %s", id)
+		return it, errors.NewGone(e[0], "unable to load IRI: %q", id)
 	}
 
 	return nil, errors.NotImplementedf("invalid response from ActivityPub server, not a document and not an error: %s", id)

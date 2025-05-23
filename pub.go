@@ -186,15 +186,15 @@ func (c C) ToInbox(ctx context.Context, a vocab.Item) (vocab.IRI, vocab.Item, er
 func (c C) collection(ctx context.Context, i vocab.IRI) (vocab.CollectionInterface, error) {
 	it, err := c.CtxLoadIRI(ctx, i)
 	if err != nil {
-		return nil, errors.Annotatef(err, "Unable to load IRI: %s", i)
+		return nil, errors.Annotatef(err, "Unable to load IRI: %q", i)
 	}
 	if vocab.IsNil(it) {
-		return nil, errors.Newf("Unable to load IRI, nil item: %s", i)
+		return nil, errors.Newf("Unable to load IRI, nil item: %q", i)
 	}
 	var col vocab.CollectionInterface
 	typ := it.GetType()
 	if !vocab.CollectionTypes.Contains(it.GetType()) {
-		return nil, errors.Errorf("Response item type is not a valid collection: %s", typ)
+		return nil, errors.Errorf("Response item type is not a valid collection: %q", typ)
 	}
 	var ok bool
 	switch typ {
@@ -208,7 +208,7 @@ func (c C) collection(ctx context.Context, i vocab.IRI) (vocab.CollectionInterfa
 		col, ok = it.(*vocab.OrderedCollectionPage)
 	}
 	if !ok {
-		return nil, errors.Errorf("Unable to convert item type %s to any of the collection types", typ)
+		return nil, errors.Errorf("Unable to convert item type %q to any of the collection types", typ)
 	}
 	return col, nil
 }
