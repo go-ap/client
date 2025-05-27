@@ -5,9 +5,9 @@ go 1.23.0
 require (
 	git.sr.ht/~mariusor/cache v0.0.0-20250122165545-14c90d7a9de8
 	git.sr.ht/~mariusor/lw v0.0.0-20250325163623-1639f3fb0e0d
-	github.com/go-ap/activitypub v0.0.0-20250501090939-71edba4a7137
-	github.com/go-ap/errors v0.0.0-20250501090840-cd50c6a0a4e6
-	github.com/go-ap/filters v0.0.0-20250501095843-df5e7d7967ec
+	github.com/go-ap/activitypub v0.0.0-20250527110644-1410ed93404d
+	github.com/go-ap/errors v0.0.0-20250527110557-c8db454e53fd
+	github.com/go-ap/filters v0.0.0-20250527111509-8ef063ce5449
 	github.com/go-ap/jsonld v0.0.0-20221030091449-f2a191312c73
 	github.com/go-fed/httpsig v1.1.0
 	golang.org/x/oauth2 v0.30.0
