@@ -5,10 +5,10 @@ go 1.23.0
 require (
 	git.sr.ht/~mariusor/cache v0.0.0-20250616110250-18a60a6f9473
 	git.sr.ht/~mariusor/lw v0.0.0-20250325163623-1639f3fb0e0d
-	github.com/go-ap/activitypub v0.0.0-20250831121713-4e61cc722305
-	github.com/go-ap/errors v0.0.0-20250527110557-c8db454e53fd
-	github.com/go-ap/filters v0.0.0-20250810115343-b996bd3d3865
-	github.com/go-ap/jsonld v0.0.0-20221030091449-f2a191312c73
+	github.com/go-ap/activitypub v0.0.0-20250905102448-e9df599e4528
+	github.com/go-ap/errors v0.0.0-20250905102357-4480b47a00c4
+	github.com/go-ap/filters v0.0.0-20250901111556-f5075cc1c0c4
+	github.com/go-ap/jsonld v0.0.0-20250905102310-8480b0fe24d9
 	github.com/go-fed/httpsig v1.1.0
 	golang.org/x/oauth2 v0.30.0
 )
