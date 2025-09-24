@@ -353,7 +353,6 @@ func (c C) toCollection(ctx context.Context, url vocab.IRI, a vocab.Item) (vocab
 		if err = errors.FromResponse(resp); err == nil {
 			err = errf("invalid status received: %d", resp.StatusCode).iri(iri)
 		} else {
-			c.errFn(Ctx{"iri": url, "status": resp.Status, "err": err.Error()})("HTTP status error")
 			err = errf("invalid status received: %d", resp.StatusCode).iri(iri).annotate(err)
 		}
 		return iri, nil, err

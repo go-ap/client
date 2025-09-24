@@ -284,14 +284,11 @@ func handleOAuth2Flow(ctx context.Context, app *oauth2.Config) (*oauth2.Token, e
 
 	select {
 	case <-ctx.Done():
-		if err := ctx.Err(); err != nil {
+		if err = ctx.Err(); err != nil {
 			return nil, fmt.Errorf("unable to authorize, reached timeout: %w", err)
 		}
 		return nil, fmt.Errorf("context done")
 	case resp := <-callbackCh:
-		if err != nil {
-			return nil, resp.err
-		}
 		tok, err := app.Exchange(ctx, resp.tok)
 		if err != nil {
 			return nil, err

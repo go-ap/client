@@ -108,12 +108,12 @@ func (c C) Actor(ctx context.Context, iri vocab.IRI) (*vocab.Actor, error) {
 	if err != nil {
 		return nil, errors.Annotatef(err, "Unable to load Actor: %s", iri)
 	}
-	var person *vocab.Actor
-	_ = vocab.OnActor(it, func(p *vocab.Actor) error {
-		person = p
+	var actor *vocab.Actor
+	err = vocab.OnActor(it, func(p *vocab.Actor) error {
+		actor = p
 		return nil
 	})
-	return person, nil
+	return actor, err
 }
 
 // Activity
@@ -134,14 +134,14 @@ func (c C) Activity(ctx context.Context, iri vocab.IRI) (*vocab.Activity, error)
 func (c C) Object(ctx context.Context, iri vocab.IRI) (*vocab.Object, error) {
 	it, err := c.object(ctx, iri)
 	if err != nil {
-		return nil, errors.Annotatef(err, "Unable to load Object: %s", iri)
+		return nil, errors.Annotatef(err, "Unable to load IRI: %s", iri)
 	}
 	var object *vocab.Object
-	_ = vocab.OnObject(it, func(o *vocab.Object) error {
+	err = vocab.OnObject(it, func(o *vocab.Object) error {
 		object = o
 		return nil
 	})
-	return object, nil
+	return object, err
 }
 
 func (c C) ToOutbox(ctx context.Context, a vocab.Item) (vocab.IRI, vocab.Item, error) {
