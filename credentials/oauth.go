@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"os/exec"
@@ -21,9 +22,12 @@ const (
 	successCallbackHTML = `<html><title>Success</title><body>You can now close this browser window/tab.</body></html>`
 	errorCallbackHTML   = `<html><title>Error</title><body>%s</body></html>`
 
-	listenOn     = "localhost:3000"
-	authWaitTime = 90 * time.Second
+	minPort               = 1024
+	localInterfaceAddress = "127.0.0.1"
+	authWaitTime          = 90 * time.Second
 )
+
+var randPort = rand.IntN(65536 - minPort)
 
 type C2S struct {
 	IRI  vocab.IRI
@@ -85,7 +89,7 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 		ClientID:     auth.ClientID,
 		ClientSecret: auth.ClientSecret,
 		Endpoint:     getActorOAuthEndpoint(*actor),
-		RedirectURL:  fmt.Sprintf("http://%s", listenOn),
+		RedirectURL:  fmt.Sprintf("http://%s:%d", localInterfaceAddress, randPort),
 	}
 
 	var tok *oauth2.Token
@@ -246,7 +250,11 @@ func handleOAuth2Flow(ctx context.Context, app *oauth2.Config) (*oauth2.Token, e
 		fmt.Printf("Opened browser window for authorization: %s.\n", authURL)
 	}
 
-	l, err := net.Listen("tcp", listenOn)
+	// NOTE(marius) we're using the 127.0.0.1 IP verbatim which allows for wildcard port number when the
+	// authorization server validates the return URL.
+	//
+	// See: https://www.rfc-editor.org/rfc/rfc8252#section-7.3
+	l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", localInterfaceAddress, randPort))
 	if err != nil {
 		return nil, err
 	}
