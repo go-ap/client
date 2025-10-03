@@ -23,11 +23,11 @@ const (
 	errorCallbackHTML   = `<html><title>Error</title><body>%s</body></html>`
 
 	minPort               = 1024
-	localInterfaceAddress = "127.0.0.1"
+	LocalInterfaceAddress = "127.0.0.1"
 	authWaitTime          = 90 * time.Second
 )
 
-var randPort = rand.IntN(65536 - minPort)
+var RandPort = rand.IntN(65536 - minPort)
 
 type C2S struct {
 	IRI  vocab.IRI
@@ -89,7 +89,7 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 		ClientID:     auth.ClientID,
 		ClientSecret: auth.ClientSecret,
 		Endpoint:     getActorOAuthEndpoint(*actor),
-		RedirectURL:  fmt.Sprintf("http://%s:%d", localInterfaceAddress, randPort),
+		RedirectURL:  fmt.Sprintf("http://%s:%d", LocalInterfaceAddress, RandPort),
 	}
 
 	var tok *oauth2.Token
@@ -254,7 +254,7 @@ func handleOAuth2Flow(ctx context.Context, app *oauth2.Config) (*oauth2.Token, e
 	// authorization server validates the return URL.
 	//
 	// See: https://www.rfc-editor.org/rfc/rfc8252#section-7.3
-	l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", localInterfaceAddress, randPort))
+	l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", LocalInterfaceAddress, RandPort))
 	if err != nil {
 		return nil, err
 	}
