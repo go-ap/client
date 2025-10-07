@@ -74,13 +74,13 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 	}
 	if actor.Type == vocab.PersonType {
 		if actor.Endpoints == nil {
-			return nil, errors.Newf("unable to load OAuth2 endpoints for Actor")
+			return nil, errors.Newf("the Actor has no OAuth2 endpoints exposed")
 		}
 		if vocab.IsNil(actor.Endpoints.OauthAuthorizationEndpoint) {
-			return nil, errors.Newf("unable to load OAuth2 authorization endpoint from Actor")
+			return nil, errors.Newf("the Actor has no OAuth2 authorization endpoint")
 		}
 		if vocab.IsNil(actor.Endpoints.OauthTokenEndpoint) {
-			return nil, errors.Newf("unable to load OAuth2 token endpoint from Actor")
+			return nil, errors.Newf("the Actor has no OAuth2 token endpoint")
 		}
 	}
 
