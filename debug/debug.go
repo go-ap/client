@@ -10,23 +10,43 @@ import (
 	"time"
 )
 
-// Transport returns a RoundTripper that dumps the request/response pair
+type OptionFn func(transport *Transport) error
+
+func WithTransport(tr http.RoundTripper) OptionFn {
+	return func(h *Transport) error {
+		h.Base = tr
+		return nil
+	}
+}
+
+func WithPath(where string) OptionFn {
+	return func(tr *Transport) error {
+		tr.where = where
+		return nil
+	}
+}
+
+// New returns a RoundTripper that dumps the request/response pair
 // to disk to the "where" directory
 // It needs to be used as a base transport if used to debug the headers produced by the
 // OAuth2 or HTTP-Signatures authorization transports.
-func Transport(base http.RoundTripper, where string) http.RoundTripper {
-	maybeDir, err := os.Stat(where)
+func New(fn ...OptionFn) http.RoundTripper {
+	tr := Transport{Base: http.DefaultTransport}
+	for _, initFn := range fn {
+		_ = initFn(&tr)
+	}
+	maybeDir, err := os.Stat(tr.where)
 	if err != nil {
-		return base
+		return tr.Base
 	}
 	if !maybeDir.IsDir() {
-		return base
+		return tr.Base
 	}
-	return dumpTransport{base: base, where: where}
+	return &tr
 }
 
-type dumpTransport struct {
-	base  http.RoundTripper
+type Transport struct {
+	Base  http.RoundTripper
 	where string
 }
 
@@ -71,16 +91,16 @@ func cloneResponse(r *http.Response, ff io.Writer) *http.Response {
 
 const boundary = "\n\n====================\n\n"
 
-func (d dumpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (d Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// NOTE(marius): return early if this is not a request with a body
 	if req.Body == nil {
-		return d.base.RoundTrip(req)
+		return d.Base.RoundTrip(req)
 	}
 
 	fullPath := filepath.Join(d.where, req.URL.Host+strings.ReplaceAll(req.URL.Path, "/", "-")+"-"+time.Now().UTC().Format(time.RFC3339)+".req")
 	ff, err := os.OpenFile(fullPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
-		return d.base.RoundTrip(req)
+		return d.Base.RoundTrip(req)
 	}
 	defer ff.Close()
 
@@ -97,7 +117,7 @@ func (d dumpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	_, _ = io.ReadAll(req.Body)
 	_ = req.Body.Close()
 
-	res, err := d.base.RoundTrip(req2)
+	res, err := d.Base.RoundTrip(req2)
 	if err != nil {
 		return nil, err
 	}

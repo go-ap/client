@@ -12,6 +12,7 @@ import (
 	"git.sr.ht/~mariusor/cache"
 	"git.sr.ht/~mariusor/lw"
 	vocab "github.com/go-ap/activitypub"
+	"github.com/go-ap/client/debug"
 	"github.com/go-ap/client/s2s"
 	"github.com/go-ap/errors"
 	"github.com/go-ap/jsonld"
@@ -108,6 +109,8 @@ func getTransportWithTLSValidation(rt http.RoundTripper, skip bool) http.RoundTr
 			tr.TLSClientConfig = new(tls.Config)
 		}
 		tr.TLSClientConfig.InsecureSkipVerify = skip
+	case *debug.Transport:
+		tr.Base = getTransportWithTLSValidation(tr.Base, skip)
 	case *s2s.HTTPSignatureTransport:
 		tr.Base = getTransportWithTLSValidation(tr.Base, skip)
 	case *oauth2.Transport:
