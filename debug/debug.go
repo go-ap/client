@@ -51,40 +51,6 @@ type Transport struct {
 	where string
 }
 
-// cloneRequest returns a clone of the provided *http.Request.
-func cloneRequest(r *http.Request, ff io.WriteCloser) *http.Request {
-	// shallow copy of the struct
-	r2 := new(http.Request)
-	*r2 = *r
-
-	// deep copy of the Header
-	r2.Header = make(http.Header, len(r.Header))
-	for k, s := range r.Header {
-		r2.Header[k] = append([]string(nil), s...)
-	}
-
-	// replace old body with the teeReader
-	r2.Body = teeCloseReader(r.Body, ff)
-
-	return r2
-}
-
-// cloneResponse returns a clone of the provided *http.Response.
-func cloneResponse(r *http.Response, ff io.WriteCloser) *http.Response {
-	// shallow copy of the struct
-	r2 := new(http.Response)
-	*r2 = *r
-	// deep copy of the Header
-	r2.Header = make(http.Header, len(r.Header))
-	for k, s := range r.Header {
-		r2.Header[k] = append([]string(nil), s...)
-	}
-
-	r2.Body = teeReadCloser(r.Body, ff)
-
-	return r2
-}
-
 const boundary = "\n\n====================\n\n"
 
 func (d Transport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -99,7 +65,7 @@ func (d Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return d.Base.RoundTrip(req)
 	}
 
-	req2 := cloneRequest(req, ff)
+	req.Body = teeCloseReader(req.Body, ff)
 
 	_, _ = ff.WriteString(req.Method)
 	_, _ = ff.WriteString(" ")
@@ -110,12 +76,12 @@ func (d Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		_, _ = ff.WriteString("\n\n")
 	}
 
-	res, err := d.Base.RoundTrip(req2)
+	res, err := d.Base.RoundTrip(req)
 	if err != nil {
 		return nil, err
 	}
 
-	res2 := cloneResponse(res, ff)
+	res.Body = teeCloseReader(res.Body, ff)
 	_, _ = ff.WriteString(boundary)
 
 	_, _ = ff.WriteString(res.Status)
@@ -125,14 +91,14 @@ func (d Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		_, _ = ff.WriteString("\n\n")
 	}
 
-	return res2, nil
+	return res, nil
 }
 
 type teeCloser struct {
 	io.Reader
-	close bool
-	from  io.ReadCloser
-	to    io.WriteCloser
+	closeWriter bool
+	from        io.ReadCloser
+	to          io.WriteCloser
 }
 
 func teeCloseReader(from io.ReadCloser, to io.WriteCloser) *teeCloser {
@@ -142,18 +108,19 @@ func teeCloseReader(from io.ReadCloser, to io.WriteCloser) *teeCloser {
 		to:     to,
 	}
 }
+
 func teeReadCloser(from io.ReadCloser, to io.WriteCloser) *teeCloser {
 	return &teeCloser{
-		close:  true,
-		Reader: io.TeeReader(from, to),
-		from:   from,
-		to:     to,
+		closeWriter: true,
+		Reader:      io.TeeReader(from, to),
+		from:        from,
+		to:          to,
 	}
 }
 
 func (t *teeCloser) Close() error {
 	err1 := t.from.Close()
-	if t.close {
+	if t.closeWriter {
 		err2 := t.to.Close()
 		return errors.Join(err1, err2)
 	}
