@@ -16,7 +16,7 @@ import (
 
 const StatusFailedTest = http.StatusExpectationFailed
 
-func sameBodyHandler(t *testing.T, wantedBuff []byte) http.HandlerFunc {
+func sameBodyHandler(t *testing.T, bodyBuff, respBuff []byte) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -25,21 +25,21 @@ func sameBodyHandler(t *testing.T, wantedBuff []byte) http.HandlerFunc {
 			return
 		}
 		//wantedBuff = append(wantedBuff, 'a', 'b')
-		if !bytes.Equal(body, wantedBuff) {
-			t.Errorf("RoundTrip() handler request body = %s, different than wanted %s", body, wantedBuff)
+		if !bytes.Equal(body, bodyBuff) {
+			t.Errorf("RoundTrip() handler request body = %s, different than wanted %s", body, bodyBuff)
 			w.WriteHeader(StatusFailedTest)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(body)
+		_, _ = w.Write(respBuff)
 	}
 }
 
-func Test_dumpTransport_RoundTrip(t *testing.T) {
+func Test_Transport_RoundTrip(t *testing.T) {
 	tests := []struct {
 		name       string
 		body       []byte
-		want       []byte
+		resp       []byte
 		wantStatus int
 		wantErr    error
 	}{
@@ -50,7 +50,7 @@ func Test_dumpTransport_RoundTrip(t *testing.T) {
 		{
 			name:       "test",
 			body:       []byte("test"),
-			want:       []byte("test"),
+			resp:       []byte("test123"),
 			wantStatus: http.StatusOK,
 		},
 	}
@@ -58,9 +58,9 @@ func Test_dumpTransport_RoundTrip(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			where := t.TempDir()
-			server := httptest.NewServer(sameBodyHandler(t, tt.body))
+			server := httptest.NewServer(sameBodyHandler(t, tt.body, tt.resp))
 
-			dt := Transport(http.DefaultTransport, where)
+			dt := Transport{Base: http.DefaultTransport, where: where}
 			req := httptest.NewRequest(http.MethodPost, server.URL, bytes.NewBuffer(tt.body))
 			req.Header.Set("Date", time.Now().Format(http.TimeFormat))
 
@@ -84,8 +84,8 @@ func Test_dumpTransport_RoundTrip(t *testing.T) {
 				t.Errorf("RoundTrip() unable to read response body: %v", err)
 			}
 
-			if !bytes.Equal(gotBody, tt.want) {
-				t.Errorf("RoundTrip() got reponse bytes = %s, wanted %s", gotBody, tt.want)
+			if !bytes.Equal(gotBody, tt.resp) {
+				t.Errorf("RoundTrip() got reponse bytes = %s, wanted %s", gotBody, tt.resp)
 			}
 
 			err = filepath.WalkDir(where, func(path string, d fs.DirEntry, err error) error {
@@ -108,8 +108,11 @@ func Test_dumpTransport_RoundTrip(t *testing.T) {
 				}
 				loggedReq := loggedBuff[bytes.Index(loggedBuff, []byte{'\n', '\n'})+3 : boundaryIndex]
 				loggedRes := loggedBuff[bytes.LastIndex(loggedBuff, []byte{'\n', '\n'})+2:]
-				if !bytes.Equal(loggedReq, loggedRes) {
-					t.Errorf("RoundTrip() log request and response don't match: %v vs %v", loggedReq, loggedRes)
+				if !bytes.Equal(loggedReq, tt.body) {
+					t.Errorf("RoundTrip() log request don't match: %v vs %v", loggedReq, tt.body)
+				}
+				if !bytes.Equal(loggedRes, tt.resp) {
+					t.Errorf("RoundTrip() log response don't match: %v vs %v", loggedReq, tt.resp)
 				}
 				return nil
 			})

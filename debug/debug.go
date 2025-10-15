@@ -1,13 +1,14 @@
 package debug
 
 import (
-	"bytes"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/go-ap/errors"
 )
 
 type OptionFn func(transport *Transport) error
@@ -51,7 +52,7 @@ type Transport struct {
 }
 
 // cloneRequest returns a clone of the provided *http.Request.
-func cloneRequest(r *http.Request, ff io.ReadWriter) *http.Request {
+func cloneRequest(r *http.Request, ff io.WriteCloser) *http.Request {
 	// shallow copy of the struct
 	r2 := new(http.Request)
 	*r2 = *r
@@ -62,17 +63,14 @@ func cloneRequest(r *http.Request, ff io.ReadWriter) *http.Request {
 		r2.Header[k] = append([]string(nil), s...)
 	}
 
-	body := bytes.Buffer{}
 	// replace old body with the teeReader
-	r.Body = io.NopCloser(io.TeeReader(r.Body, io.MultiWriter(ff, &body)))
-	// new request body
-	r2.Body = io.NopCloser(&body)
+	r2.Body = teeCloseReader(r.Body, ff)
 
 	return r2
 }
 
 // cloneResponse returns a clone of the provided *http.Response.
-func cloneResponse(r *http.Response, ff io.Writer) *http.Response {
+func cloneResponse(r *http.Response, ff io.WriteCloser) *http.Response {
 	// shallow copy of the struct
 	r2 := new(http.Response)
 	*r2 = *r
@@ -82,9 +80,7 @@ func cloneResponse(r *http.Response, ff io.Writer) *http.Response {
 		r2.Header[k] = append([]string(nil), s...)
 	}
 
-	body := bytes.Buffer{}
-	r.Body = io.NopCloser(io.TeeReader(r.Body, io.MultiWriter(ff, &body)))
-	r2.Body = io.NopCloser(&body)
+	r2.Body = teeReadCloser(r.Body, ff)
 
 	return r2
 }
@@ -102,7 +98,6 @@ func (d Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return d.Base.RoundTrip(req)
 	}
-	defer ff.Close()
 
 	req2 := cloneRequest(req, ff)
 
@@ -114,8 +109,6 @@ func (d Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		_ = req.Header.Write(ff)
 		_, _ = ff.WriteString("\n\n")
 	}
-	_, _ = io.ReadAll(req.Body)
-	_ = req.Body.Close()
 
 	res, err := d.Base.RoundTrip(req2)
 	if err != nil {
@@ -131,8 +124,38 @@ func (d Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		_ = res.Header.Write(ff)
 		_, _ = ff.WriteString("\n\n")
 	}
-	_, _ = io.ReadAll(res.Body)
-	_ = res.Body.Close()
 
 	return res2, nil
+}
+
+type teeCloser struct {
+	io.Reader
+	close bool
+	from  io.ReadCloser
+	to    io.WriteCloser
+}
+
+func teeCloseReader(from io.ReadCloser, to io.WriteCloser) *teeCloser {
+	return &teeCloser{
+		Reader: io.TeeReader(from, to),
+		from:   from,
+		to:     to,
+	}
+}
+func teeReadCloser(from io.ReadCloser, to io.WriteCloser) *teeCloser {
+	return &teeCloser{
+		close:  true,
+		Reader: io.TeeReader(from, to),
+		from:   from,
+		to:     to,
+	}
+}
+
+func (t *teeCloser) Close() error {
+	err1 := t.from.Close()
+	if t.close {
+		err2 := t.to.Close()
+		return errors.Join(err1, err2)
+	}
+	return err1
 }
