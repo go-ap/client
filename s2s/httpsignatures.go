@@ -148,12 +148,12 @@ func (s *HTTPSignatureTransport) signRequest(req *http.Request) error {
 		return errors.Annotatef(err, "unable to sign request, Actor public key type %T is invalid", actorPubKey)
 	}
 
-	headers := headersToSign
+	headers := HeadersToSign
 	bodyBuf := bytes.Buffer{}
 	if req.Body != nil {
 		if _, err := io.Copy(&bodyBuf, req.Body); err == nil {
 			req.Body = io.NopCloser(&bodyBuf)
-			headers = append(headersToSign, "digest")
+			headers = append(HeadersToSign, "digest")
 		}
 	}
 
