@@ -21,6 +21,8 @@ import (
 )
 
 var (
+	nilLogger = lw.Dev(lw.SetOutput(io.Discard))
+
 	digestAlgorithm     = httpsig.DigestSha256
 	signatureExpiration = int64(time.Hour.Seconds())
 )
@@ -61,6 +63,7 @@ func WithLogger(l lw.Logger) OptionFn {
 func New(initFns ...OptionFn) *HTTPSignatureTransport {
 	h := new(HTTPSignatureTransport)
 	h.Base = &http.Transport{}
+	h.l = nilLogger
 	for _, fn := range initFns {
 		_ = fn(h)
 	}
