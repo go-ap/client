@@ -147,6 +147,7 @@ var (
 
 	defaultTransport http.RoundTripper = uaTransport{
 		Base: &http.Transport{
+			Proxy:               http.ProxyFromEnvironment,
 			MaxIdleConns:        100,
 			IdleConnTimeout:     90 * time.Second,
 			MaxIdleConnsPerHost: 20,
