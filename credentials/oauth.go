@@ -2,6 +2,7 @@ package credentials
 
 import (
 	"context"
+	crypto_rand "crypto/rand"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
@@ -240,7 +241,7 @@ func dumbProgressBar(ctx context.Context) {
 }
 
 func handleOAuth2Flow(ctx context.Context, app *oauth2.Config) (*oauth2.Token, error) {
-	state := ""
+	state := crypto_rand.Text()
 
 	authURL := app.AuthCodeURL(state)
 	if err := openbrowser(authURL); err != nil {
@@ -273,13 +274,19 @@ func handleOAuth2Flow(ctx context.Context, app *oauth2.Config) (*oauth2.Token, e
 	fn := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 		token := r.Form.Get("code")
-		if token != "" {
+		var cbErr error
+		if r.Form.Get("error") != "" {
+			cbErr = fmt.Errorf("%s: %s", r.Form.Get("error"), r.Form.Get("error_description"))
+		} else if r.Form.Get("state") != state {
+			cbErr = fmt.Errorf("State parameter mismatch")
+		} else if token != "" {
 			callbackCh <- callbackResponse{tok: token}
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(successCallbackHTML))
 			return
+		} else {
+			cbErr = fmt.Errorf("Token is missing")
 		}
-		cbErr := fmt.Errorf("%s: %s", r.Form.Get("error"), r.Form.Get("error_description"))
 		callbackCh <- callbackResponse{err: cbErr}
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(fmt.Sprintf(errorCallbackHTML, cbErr)))
