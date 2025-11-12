@@ -14,7 +14,6 @@ download:
 test: download
 	$(TEST) $(TEST_FLAGS) $(TEST_TARGET)
 
-coverage: TEST_TARGET := .
 coverage: TEST_FLAGS += -covermode=count -coverprofile $(PROJECT_NAME).coverprofile
 coverage: test
 

@@ -27,7 +27,7 @@ const (
 	authWaitTime          = 90 * time.Second
 )
 
-var RandPort = rand.IntN(65536 - minPort)
+var RandPort = minPort + rand.IntN(65536-minPort)
 
 type C2S struct {
 	IRI  vocab.IRI

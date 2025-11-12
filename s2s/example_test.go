@@ -58,17 +58,16 @@ func ExampleHTTPSignatureTransport_RoundTrip() {
 
 	tr := New(WithTransport(http.DefaultTransport), WithActor(actor, prv))
 
+	// The below functionality would be equivalent to this, more idiomatic, usage:
+	//http.DefaultClient.Transport = tr
+	//res, err := http.Get(srv.URL)
+
 	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
 	host := strings.TrimPrefix(srv.URL, "http://")
 	host = host[:strings.Index(host, ":")]
 	req.Header.Set("Host", host)
 	req.Header.Set("Date", millenium.Format(http.TimeFormat))
 	_, _ = tr.RoundTrip(req)
-
-	// The above would be equivalent with setting the transport to the default Client and
-	// operating a GET request on the srv.URL:
-	//http.DefaultClient.Transport = tr
-	//res, err := http.DefaultClient.Get(srv.URL)
 
 	// Output:
 	// keyId="https://example.com/~johndoe#main",algorithm="hs2019",headers="(request-target) host date",signature="lotUyRDWnYs/AxAy+oOMAcgXPaUXsCjn8yjhPsJ7o/Ek2Q66e61V57qTALgBU+zHftTj9u/dHZehp/1M/JKhkygiEw2Av16MzpNFmsC6lxMTP4Pvs9wxXxLPXQKWzlYVaHKlEzRMoFI3AJyRlf/eT2mNoJVh1f89ETV704Jl8eE="
