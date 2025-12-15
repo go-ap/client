@@ -2,10 +2,10 @@ package credentials
 
 import (
 	"context"
-	crypto_rand "crypto/rand"
+	"crypto/rand"
 	"fmt"
 	"log/slog"
-	"math/rand/v2"
+	mrand "math/rand/v2"
 	"net"
 	"net/http"
 	"os/exec"
@@ -28,7 +28,7 @@ const (
 	authWaitTime          = 90 * time.Second
 )
 
-var RandPort = minPort + rand.IntN(65536-minPort)
+var RandPort = minPort + mrand.IntN(65536-minPort)
 
 type C2S struct {
 	IRI  vocab.IRI
@@ -41,6 +41,8 @@ type ClientConfig struct {
 	ClientID     string
 	ClientSecret string
 	RedirectURL  string
+	IssuedAt     time.Time
+	Expiration   time.Duration
 }
 
 func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, error) {
@@ -49,11 +51,14 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 		actorIRI = vocab.IRI(fmt.Sprintf("https://%s", actorURL))
 	}
 
-	transport := client.UserAgentTransport(auth.UserAgent, cache.Private(http.DefaultTransport, cache.Mem(MByte)))
-	// Set up the default HTTP client for the oauth2 module
-	// which gets used by both Person and Application authorization flows.
-	plainHTTPClient := &http.Client{Transport: transport}
-	ctx = context.WithValue(ctx, oauth2.HTTPClient, plainHTTPClient)
+	if ctx.Value(oauth2.HTTPClient) == nil {
+		transport := client.UserAgentTransport(auth.UserAgent, cache.Private(http.DefaultTransport, cache.Mem(MByte)))
+		// Set up the default HTTP client for the oauth2 module
+		// which gets used by both Person and Application authorization flows.
+		plainHTTPClient := http.DefaultClient
+		plainHTTPClient.Transport = transport
+		ctx = context.WithValue(ctx, oauth2.HTTPClient, plainHTTPClient)
+	}
 
 	app := new(C2S)
 	httpC := OAuth2Client(ctx, app)
@@ -241,7 +246,7 @@ func dumbProgressBar(ctx context.Context) {
 }
 
 func handleOAuth2Flow(ctx context.Context, app *oauth2.Config) (*oauth2.Token, error) {
-	state := crypto_rand.Text()
+	state := rand.Text()
 
 	authURL := app.AuthCodeURL(state)
 	if err := openbrowser(authURL); err != nil {
