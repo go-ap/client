@@ -5,9 +5,9 @@ go 1.25
 require (
 	git.sr.ht/~mariusor/cache v0.0.0-20250616110250-18a60a6f9473
 	git.sr.ht/~mariusor/lw v0.0.0-20250325163623-1639f3fb0e0d
-	github.com/go-ap/activitypub v0.0.0-20260123105353-38736987d071
+	github.com/go-ap/activitypub v0.0.0-20260202145439-631b210a777e
 	github.com/go-ap/errors v0.0.0-20251229095444-2702aa2d8569
-	github.com/go-ap/filters v0.0.0-20260124112747-f1400f81a7a6
+	github.com/go-ap/filters v0.0.0-20260202134526-dc7825a152e6
 	github.com/go-ap/jsonld v0.0.0-20251216162253-e38fa664ea77
 	github.com/go-fed/httpsig v1.1.0
 	golang.org/x/oauth2 v0.34.0

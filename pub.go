@@ -189,19 +189,20 @@ func (c C) collection(ctx context.Context, i vocab.IRI) (vocab.CollectionInterfa
 		return nil, errors.Newf("Unable to load IRI, nil item: %q", i)
 	}
 	var col vocab.CollectionInterface
+
 	typ := it.GetType()
-	if !vocab.CollectionTypes.Contains(it.GetType()) {
+	if !vocab.CollectionTypes.Match(it.GetType()) {
 		return nil, errors.Errorf("Response item type is not a valid collection: %q", typ)
 	}
 	var ok bool
-	switch typ {
-	case vocab.CollectionType:
+	switch {
+	case vocab.CollectionType.Match(typ):
 		col, ok = it.(*vocab.Collection)
-	case vocab.CollectionPageType:
+	case vocab.CollectionPageType.Match(typ):
 		col, ok = it.(*vocab.CollectionPage)
-	case vocab.OrderedCollectionType:
+	case vocab.OrderedCollectionType.Match(typ):
 		col, ok = it.(*vocab.OrderedCollection)
-	case vocab.OrderedCollectionPageType:
+	case vocab.OrderedCollectionPageType.Match(typ):
 		col, ok = it.(*vocab.OrderedCollectionPage)
 	}
 	if !ok {
@@ -254,7 +255,7 @@ func validateActor(a vocab.Item) error {
 	if vocab.IsNil(a) {
 		return errors.Errorf("Actor is nil")
 	}
-	if a.IsObject() && !vocab.ActorTypes.Contains(a.GetType()) {
+	if a.IsObject() && !vocab.ActorTypes.Match(a.GetType()) {
 		return errors.Errorf("Invalid Actor type %s", a.GetType())
 	}
 	return nil
@@ -264,7 +265,7 @@ func validateObject(o vocab.Item) error {
 	if vocab.IsNil(o) {
 		return errors.Errorf("object is nil")
 	}
-	if o.IsObject() && !vocab.ObjectTypes.Contains(o.GetType()) {
+	if o.IsObject() && !vocab.ObjectTypes.Match(o.GetType()) {
 		return errors.Errorf("invalid Object type %q", o.GetType())
 	}
 	return nil
