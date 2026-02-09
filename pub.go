@@ -147,7 +147,11 @@ func (c C) Object(ctx context.Context, iri vocab.IRI) (*vocab.Object, error) {
 func (c C) ToOutbox(ctx context.Context, a vocab.Item) (vocab.IRI, vocab.Item, error) {
 	var iri vocab.IRI
 	_ = vocab.OnActivity(a, func(a *vocab.Activity) error {
+		// TODO(marius): this needs updating to work with an Actor that is an IRIs or ItemCollection
 		iri = outbox(a.Actor)
+		if !vocab.IsIRI(a.Actor) {
+			a.Actor = a.Actor.GetLink()
+		}
 		return nil
 	})
 	if err := validateIRIForRequest(iri); err != nil {
@@ -158,8 +162,12 @@ func (c C) ToOutbox(ctx context.Context, a vocab.Item) (vocab.IRI, vocab.Item, e
 
 func (c C) ToInbox(ctx context.Context, a vocab.Item) (vocab.IRI, vocab.Item, error) {
 	var iri vocab.IRI
-	vocab.OnActivity(a, func(a *vocab.Activity) error {
+	_ = vocab.OnActivity(a, func(a *vocab.Activity) error {
+		// TODO(marius): this needs updating to work with an Actor that is an IRIs or ItemCollection
 		iri = inbox(a.Actor)
+		if !vocab.IsIRI(a.Actor) {
+			a.Actor = a.Actor.GetLink()
+		}
 		return nil
 	})
 
