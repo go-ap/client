@@ -15,6 +15,7 @@ import (
 	"git.sr.ht/~mariusor/cache"
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/client"
+	"github.com/go-ap/client/proxy"
 	"github.com/go-ap/errors"
 	"golang.org/x/oauth2"
 )
@@ -31,9 +32,10 @@ const (
 var RandPort = minPort + mrand.IntN(65536-minPort)
 
 type C2S struct {
-	IRI  vocab.IRI
-	Conf oauth2.Config
-	Tok  *oauth2.Token
+	IRI      vocab.IRI
+	Conf     oauth2.Config
+	Tok      *oauth2.Token
+	ProxyURL vocab.IRI
 }
 
 type ClientConfig struct {
@@ -78,7 +80,7 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 	if actor.ID == "" {
 		return nil, errors.Newf("invalid Actor with empty ID")
 	}
-	if actor.Type == vocab.PersonType {
+	if vocab.PersonType.Match(actor.Type) {
 		if actor.Endpoints == nil {
 			return nil, errors.Newf("the Actor has no OAuth2 endpoints exposed")
 		}
@@ -88,6 +90,7 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 		if vocab.IsNil(actor.Endpoints.OauthTokenEndpoint) {
 			return nil, errors.Newf("the Actor has no OAuth2 token endpoint")
 		}
+		app.ProxyURL = actor.Endpoints.ProxyURL
 	}
 
 	app.IRI = actor.ID
@@ -186,10 +189,14 @@ const (
 var DefaultClient = &http.Client{}
 
 func (c *C2S) Transport(ctx context.Context) http.RoundTripper {
+	var transport http.RoundTripper = &http.Transport{}
 	if tok := c.Token(); tok != nil {
-		return c.Config().Client(ctx, tok).Transport
+		transport = c.Config().Client(ctx, tok).Transport
 	}
-	return &http.Transport{}
+	if !vocab.EmptyIRI.Equal(c.ProxyURL) {
+		transport = proxy.New(proxy.WithTransport(transport), proxy.WithProxyURL(c.ProxyURL))
+	}
+	return transport
 }
 
 func OAuth2Client(ctx context.Context, c *C2S) *http.Client {
@@ -208,6 +215,11 @@ func OAuth2Client(ctx context.Context, c *C2S) *http.Client {
 	if c != nil {
 		if tok := c.Token(); tok != nil {
 			httpC.Transport = c.Config().Client(ctx, tok).Transport
+		}
+		// NOTE(marius): if the C2S client actor has a ProxyURL endpoint,
+		// we can use that for requests to other servers.
+		if !vocab.EmptyIRI.Equal(c.ProxyURL) {
+			httpC.Transport = proxy.New(proxy.WithTransport(httpC.Transport), proxy.WithProxyURL(c.ProxyURL))
 		}
 	}
 
@@ -283,14 +295,14 @@ func handleOAuth2Flow(ctx context.Context, app *oauth2.Config) (*oauth2.Token, e
 		if r.Form.Get("error") != "" {
 			cbErr = fmt.Errorf("%s: %s", r.Form.Get("error"), r.Form.Get("error_description"))
 		} else if r.Form.Get("state") != state {
-			cbErr = fmt.Errorf("State parameter mismatch")
+			cbErr = fmt.Errorf("state parameter mismatch")
 		} else if token != "" {
 			callbackCh <- callbackResponse{tok: token}
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(successCallbackHTML))
 			return
 		} else {
-			cbErr = fmt.Errorf("Token is missing")
+			cbErr = fmt.Errorf("token is missing")
 		}
 		callbackCh <- callbackResponse{err: cbErr}
 		w.WriteHeader(http.StatusUnauthorized)
