@@ -90,7 +90,6 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 		if vocab.IsNil(actor.Endpoints.OauthTokenEndpoint) {
 			return nil, errors.Newf("the Actor has no OAuth2 token endpoint")
 		}
-		app.ProxyURL = actor.Endpoints.ProxyURL
 	}
 
 	app.IRI = actor.ID
@@ -99,6 +98,9 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 		ClientSecret: auth.ClientSecret,
 		Endpoint:     getActorOAuthEndpoint(*actor),
 		RedirectURL:  fmt.Sprintf("http://%s:%d", LocalInterfaceAddress, RandPort),
+	}
+	if actor.Endpoints != nil {
+		app.ProxyURL = actor.Endpoints.ProxyURL
 	}
 
 	var tok *oauth2.Token
