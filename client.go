@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"git.sr.ht/~mariusor/cache"
@@ -270,9 +271,8 @@ func (c *C) req(ctx context.Context, method string, url, contentType string, bod
 		return req, err
 	}
 	if method == http.MethodGet || method == http.MethodHead {
-		req.Header.Add("Accept", ContentTypeJsonLD)
-		req.Header.Add("Accept", ContentTypeActivityJson)
-		req.Header.Add("Accept", "application/json")
+		acceptedMediaTypes := []string{ContentTypeActivityJson, ContentTypeJsonLD, "application/json;q=0.9"}
+		req.Header.Add("Accept", strings.Join(acceptedMediaTypes, ", "))
 	} else {
 		if len(contentType) == 0 {
 			contentType = ContentTypeJsonLD
