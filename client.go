@@ -266,10 +266,10 @@ func (c C) log(err error) CtxLogFn {
 
 func (c *C) req(ctx context.Context, method string, url, contentType string, body io.Reader) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
-	req.Proto = "HTTP/2.0"
 	if err != nil {
-		return req, err
+		return nil, err
 	}
+	req.Proto = "HTTP/2.0"
 	if method == http.MethodGet || method == http.MethodHead {
 		acceptedMediaTypes := []string{ContentTypeActivityJson, ContentTypeJsonLD, "application/json;q=0.9"}
 		req.Header.Add("Accept", strings.Join(acceptedMediaTypes, ", "))
