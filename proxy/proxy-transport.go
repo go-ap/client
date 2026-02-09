@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strings"
 
 	vocab "github.com/go-ap/activitypub"
 )
@@ -25,20 +26,19 @@ var shouldProxyStatuses = []int{http.StatusForbidden, http.StatusUnauthorized}
 // If the server requires authorization, that should be handled by the Base transport - using most likely the OAuth2
 // round tripper.
 func (t Transport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if req.Method != http.MethodGet {
-		return t.Base.RoundTrip(req)
-	}
-	proxyURL, err := t.ProxyURL.URL()
-	if err != nil {
-		return t.Base.RoundTrip(req)
+	needsProxying := req.Method == http.MethodGet
+	proxyURL, _ := t.ProxyURL.URL()
+	// NOTE(marius): if the request is done to the same host as the proxyUrl we most likely don't need to use the proxy
+	if proxyURL == nil || strings.EqualFold(proxyURL.Host, req.URL.Host) {
+		needsProxying = false
 	}
 
 	res, err := t.Base.RoundTrip(req)
 	if err != nil {
 		return nil, err
 	}
-	// NOTE(marius): if first attempt failed, try again using the proxyUrl
-	if slices.Contains(shouldProxyStatuses, res.StatusCode) {
+	// NOTE(marius): if the first attempt failed, and we fulfill the proxying requirements, try again
+	if !needsProxying || !slices.Contains(shouldProxyStatuses, res.StatusCode) {
 		return res, err
 	}
 
