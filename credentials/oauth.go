@@ -103,15 +103,20 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 		app.ProxyURL = actor.Endpoints.ProxyURL
 	}
 
-	switch actor.Type {
-	case vocab.PersonType:
+	nonUserTypes := vocab.ActivityVocabularyTypes{vocab.ApplicationType, vocab.ServiceType, vocab.GroupType}
+	if nonUserTypes.Match(actor.Type) && auth.ClientSecret != "" {
+		// NOTE(marius): if we received a OAuth2 client secret and the authorization actor is not a Person,
+		// we try a PasswordCredentials flow first.
+		app.Tok, _ = app.Conf.PasswordCredentialsToken(ctx, actor.ID.String(), app.Conf.ClientSecret)
+	}
+
+	if app.Tok == nil {
+		// NOTE(marius): For all Person actors, or a failed password credentials flow, we try  an authorization flow.
 		tok, err := handleOAuth2Flow(ctx, &app.Conf)
 		if err != nil {
 			return nil, err
 		}
 		app.Tok, err = app.Conf.TokenSource(ctx, tok).Token()
-	case vocab.ApplicationType, vocab.ServiceType, vocab.GroupType:
-		app.Tok, err = app.Conf.PasswordCredentialsToken(ctx, actor.ID.String(), app.Conf.ClientSecret)
 	}
 
 	return app, err
