@@ -103,25 +103,18 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 		app.ProxyURL = actor.Endpoints.ProxyURL
 	}
 
-	var tok *oauth2.Token
 	switch actor.Type {
 	case vocab.PersonType:
-		tok, err = handleOAuth2Flow(ctx, &app.Conf)
+		tok, err := handleOAuth2Flow(ctx, &app.Conf)
 		if err != nil {
 			return nil, err
 		}
 		app.Tok, err = app.Conf.TokenSource(ctx, tok).Token()
-		if err != nil {
-			return nil, err
-		}
 	case vocab.ApplicationType, vocab.ServiceType, vocab.GroupType:
 		app.Tok, err = app.Conf.PasswordCredentialsToken(ctx, actor.ID.String(), app.Conf.ClientSecret)
-		if err != nil {
-			return nil, err
-		}
 	}
 
-	return app, nil
+	return app, err
 }
 
 type RequestAuthorizer interface {
@@ -291,6 +284,10 @@ func handleOAuth2Flow(ctx context.Context, app *oauth2.Config) (*oauth2.Token, e
 	defer cancelFn()
 
 	fn := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/favicon.ico" {
+			http.NotFound(w, r)
+			return
+		}
 		_ = r.ParseForm()
 		token := r.Form.Get("code")
 		var cbErr error
@@ -323,10 +320,9 @@ func handleOAuth2Flow(ctx context.Context, app *oauth2.Config) (*oauth2.Token, e
 		}
 		return nil, fmt.Errorf("context done")
 	case resp := <-callbackCh:
-		tok, err := app.Exchange(ctx, resp.tok)
-		if err != nil {
-			return nil, err
+		if resp.err != nil {
+			return nil, resp.err
 		}
-		return tok, nil
+		return app.Exchange(ctx, resp.tok)
 	}
 }
