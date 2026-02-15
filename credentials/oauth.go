@@ -18,6 +18,7 @@ import (
 	"github.com/go-ap/client/proxy"
 	"github.com/go-ap/errors"
 	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/clientcredentials"
 )
 
 const (
@@ -99,15 +100,23 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 		Endpoint:     getActorOAuthEndpoint(*actor),
 		RedirectURL:  fmt.Sprintf("http://%s:%d", LocalInterfaceAddress, RandPort),
 	}
+	if auth.RedirectURL != "" {
+		app.Conf.RedirectURL = auth.RedirectURL
+	}
 	if actor.Endpoints != nil {
 		app.ProxyURL = actor.Endpoints.ProxyURL
 	}
 
 	nonUserTypes := vocab.ActivityVocabularyTypes{vocab.ApplicationType, vocab.ServiceType, vocab.GroupType}
 	if nonUserTypes.Match(actor.Type) && auth.ClientSecret != "" {
+		conf := clientcredentials.Config{
+			ClientID:     app.Conf.ClientID,
+			ClientSecret: app.Conf.ClientSecret,
+			TokenURL:     app.Conf.Endpoint.TokenURL,
+		}
 		// NOTE(marius): if we received a OAuth2 client secret and the authorization actor is not a Person,
-		// we try a PasswordCredentials flow first.
-		app.Tok, _ = app.Conf.PasswordCredentialsToken(ctx, actor.ID.String(), app.Conf.ClientSecret)
+		// we try a ClientCredentials flow first.
+		app.Tok, _ = conf.Token(ctx)
 	}
 
 	if app.Tok == nil {
@@ -268,7 +277,7 @@ func handleOAuth2Flow(ctx context.Context, app *oauth2.Config) (*oauth2.Token, e
 		fmt.Printf("Opened browser window for authorization: %s.\n", authURL)
 	}
 
-	// NOTE(marius) we're using the 127.0.0.1 IP verbatim which allows for wildcard port number when the
+	// NOTE(marius) The clients are using the 127.0.0.1 IP verbatim which allows for wildcard port number when the
 	// authorization server validates the return URL.
 	//
 	// See: https://www.rfc-editor.org/rfc/rfc8252#section-7.3
