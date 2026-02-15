@@ -41,6 +41,7 @@ type C2S struct {
 
 type ClientConfig struct {
 	UserAgent    string
+	Interactive  bool
 	ClientID     string
 	ClientSecret string
 	RedirectURL  string
@@ -116,10 +117,11 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 		}
 		// NOTE(marius): if we received a OAuth2 client secret and the authorization actor is not a Person,
 		// we try a ClientCredentials flow first.
-		app.Tok, _ = conf.Token(ctx)
+		app.Tok, err = conf.Token(ctx)
 	}
 
-	if app.Tok == nil {
+	// NOTE(marius): if we support an interactive session, we try to authenticate through the browser.
+	if app.Tok == nil && auth.Interactive {
 		// NOTE(marius): For all Person actors, or a failed password credentials flow, we try  an authorization flow.
 		tok, err := handleOAuth2Flow(ctx, &app.Conf)
 		if err != nil {
