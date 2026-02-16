@@ -268,10 +268,22 @@ func dumbProgressBar(ctx context.Context) {
 	}
 }
 
+const pkceAlphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ234567-._~"
+
+func CodeVerifier() string {
+	src := make([]byte, 43)
+	_, _ = rand.Read(src)
+	for i := range src {
+		src[i] = pkceAlphabet[src[i]%62]
+	}
+	return string(src)
+}
+
 func handleOAuth2Flow(ctx context.Context, app *oauth2.Config) (*oauth2.Token, error) {
 	state := rand.Text()
 
-	authURL := app.AuthCodeURL(state)
+	codeVerifier := CodeVerifier()
+	authURL := app.AuthCodeURL(state, oauth2.S256ChallengeOption(codeVerifier))
 	if err := openbrowser(authURL); err != nil {
 		slog.With(slog.String("err", err.Error())).Warn("Unable to open browser window.")
 		slog.With(slog.String("url", authURL)).Info("Please manually open the authorization URL in your browser.")
@@ -339,6 +351,6 @@ func handleOAuth2Flow(ctx context.Context, app *oauth2.Config) (*oauth2.Token, e
 		if resp.err != nil {
 			return nil, resp.err
 		}
-		return app.Exchange(ctx, resp.tok)
+		return app.Exchange(ctx, resp.tok, oauth2.VerifierOption(codeVerifier))
 	}
 }
