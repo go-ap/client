@@ -7,9 +7,10 @@ require (
 	git.sr.ht/~mariusor/lw v0.0.0-20250325163623-1639f3fb0e0d
 	github.com/go-ap/activitypub v0.0.0-20260217161652-7bec47e1f870
 	github.com/go-ap/errors v0.0.0-20260208110149-e1b309365966
-	github.com/go-ap/filters v0.0.0-20260217161827-328591eba1ab
+	github.com/go-ap/filters v0.0.0-20260225075253-189c95c4e82b
 	github.com/go-ap/jsonld v0.0.0-20251216162253-e38fa664ea77
 	github.com/go-fed/httpsig v1.1.0
+	github.com/google/go-cmp v0.7.0
 	golang.org/x/oauth2 v0.35.0
 )
 
@@ -27,9 +28,10 @@ require (
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/rs/zerolog v1.34.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
-	github.com/valyala/fastjson v1.6.7 // indirect
+	github.com/valyala/fastjson v1.6.10 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	gopkg.in/neurosnap/sentences.v1 v1.0.7 // indirect
+	quamina.net/go/quamina v1.5.2-0.20260219224429-4b74c3864009 // indirect
 )

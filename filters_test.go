@@ -1,10 +1,11 @@
 package client
 
 import (
-	"github.com/go-ap/filters"
 	"net/url"
-	"reflect"
 	"testing"
+
+	"github.com/go-ap/filters"
+	"github.com/google/go-cmp/cmp"
 )
 
 func kv(key string, values ...string) url.Values {
@@ -34,7 +35,7 @@ func TestFilters(t *testing.T) {
 		{
 			name: "empty",
 			args: nil,
-			want: url.Values{},
+			want: nil,
 		},
 		{
 			name: "maxItems",
@@ -79,8 +80,8 @@ func TestFilters(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			filterFn := Filters(tt.args...)
-			if got := filterFn(); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Filters() = %v, want %v", got, tt.want)
+			if got := filterFn(); !cmp.Equal(got, tt.want) {
+				t.Errorf("Filters() = %s", cmp.Diff(tt.want, got))
 			}
 		})
 	}
