@@ -32,10 +32,14 @@ func WithPath(where string) OptionFn {
 // It needs to be used as a base transport if used to debug the headers produced by the
 // OAuth2 or HTTP-Signatures authorization transports.
 func New(fn ...OptionFn) http.RoundTripper {
-	tr := Transport{Base: http.DefaultTransport}
+	tr := Transport{}
 	for _, initFn := range fn {
 		_ = initFn(&tr)
 	}
+	if tr.Base == nil {
+		tr.Base = http.DefaultTransport
+	}
+
 	maybeDir, err := os.Stat(tr.where)
 	if err != nil {
 		return tr.Base
@@ -55,7 +59,7 @@ const boundary = "\n\n====================\n\n"
 
 func (d Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// NOTE(marius): return early if this is not a request with a body
-	if req.Body == nil {
+	if req == nil || req.Body == nil {
 		return d.Base.RoundTrip(req)
 	}
 
@@ -106,15 +110,6 @@ func teeCloseReader(from io.ReadCloser, to io.WriteCloser) *teeCloser {
 		Reader: io.TeeReader(from, to),
 		from:   from,
 		to:     to,
-	}
-}
-
-func teeReadCloser(from io.ReadCloser, to io.WriteCloser) *teeCloser {
-	return &teeCloser{
-		closeWriter: true,
-		Reader:      io.TeeReader(from, to),
-		from:        from,
-		to:          to,
 	}
 }
 

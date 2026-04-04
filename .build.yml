@@ -3,6 +3,8 @@ packages:
   - go
 sources:
   - https://github.com/go-ap/client
+secrets:
+  - 03a5baad-1226-4b03-a01e-773c747c141f
 environment:
   GO111MODULE: 'on'
 tasks:
@@ -10,5 +12,7 @@ tasks:
       cd client
       make test
   - coverage: |
-      set -a +x
-      cd client && make coverage
+      cd client
+      git switch -C master origin/master
+      make coverage
+      go tool goveralls -flagname unit-tests -service=${CI_NAME} -coverprofile client.coverprofile -repotokenfile ~/.coveralls.tok
