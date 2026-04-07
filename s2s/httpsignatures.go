@@ -2,6 +2,7 @@ package s2s
 
 import (
 	"bytes"
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -15,6 +16,10 @@ import (
 	"time"
 
 	"git.sr.ht/~mariusor/lw"
+	e "github.com/common-fate/httpsig/alg_ecdsa"
+	ed "github.com/common-fate/httpsig/alg_ed25519"
+	r "github.com/common-fate/httpsig/alg_rsa"
+	"github.com/common-fate/httpsig/signer"
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/errors"
 	"github.com/go-fed/httpsig"
@@ -28,7 +33,7 @@ var (
 )
 
 type HTTPSignatureTransport struct {
-	Base http.RoundTripper
+	signer.Transport
 
 	Key   crypto.PrivateKey
 	Actor *vocab.Actor
@@ -40,15 +45,46 @@ type OptionFn func(transport *HTTPSignatureTransport) error
 
 func WithTransport(tr http.RoundTripper) OptionFn {
 	return func(h *HTTPSignatureTransport) error {
-		h.Base = tr
+		h.Transport.BaseTransport = tr
 		return nil
 	}
+}
+
+func NoRFC9421(h *HTTPSignatureTransport) error {
+	h.Transport.Alg = nil
+	return nil
 }
 
 func WithActor(act *vocab.Actor, prv crypto.PrivateKey) OptionFn {
 	return func(h *HTTPSignatureTransport) error {
 		h.Actor = act
 		h.Key = prv
+		h.Transport.KeyID = string(act.PublicKey.ID)
+
+		actorPubKey, err := toCryptoPublicKey(act.PublicKey)
+		if err != nil {
+			return errors.Annotatef(err, "unable to sign request, Actor public key type %T is invalid", actorPubKey)
+		}
+		switch pk := prv.(type) {
+		case *rsa.PrivateKey:
+			pub, _ := pk.Public().(*rsa.PublicKey)
+			if !pub.Equal(actorPubKey) {
+				return keyMismatchErr(err)
+			}
+			h.Transport.Alg = r.NewRSAPKCS256Signer(pk)
+		case *ecdsa.PrivateKey:
+			pub, _ := pk.Public().(*ecdsa.PublicKey)
+			if !pub.Equal(actorPubKey) {
+				return keyMismatchErr(err)
+			}
+			h.Transport.Alg = e.NewP384Signer(pk)
+		case ed25519.PrivateKey:
+			pub, _ := pk.Public().(ed25519.PublicKey)
+			if !pub.Equal(actorPubKey) {
+				return keyMismatchErr(err)
+			}
+			h.Transport.Alg = &ed.Ed25519{PrivateKey: pk, PublicKey: pub}
+		}
 		return nil
 	}
 }
@@ -56,18 +92,35 @@ func WithActor(act *vocab.Actor, prv crypto.PrivateKey) OptionFn {
 func WithLogger(l lw.Logger) OptionFn {
 	return func(h *HTTPSignatureTransport) error {
 		h.l = l
+		h.Transport.OnDeriveSigningString = func(ctx context.Context, stringToSign string) {
+			l.Debugf("String to sign: %s", stringToSign)
+		}
 		return nil
 	}
 }
 
+func WithApplicationTag(t string) OptionFn {
+	return func(h *HTTPSignatureTransport) error {
+		h.Transport.Tag = t
+		return nil
+	}
+}
+
+// New initializes the HTTPSignatureTransport
+// TODO(marius): we need to add to the return values the errors
+//  that might come from the initialization functions.
 func New(initFns ...OptionFn) *HTTPSignatureTransport {
 	h := new(HTTPSignatureTransport)
-	h.Base = &http.Transport{}
+	h.Transport.BaseTransport = &http.Transport{}
 	h.l = nilLogger
+	h.Transport.OnDeriveSigningString = func(_ context.Context, _ string) {}
 	for _, fn := range initFns {
-		_ = fn(h)
+		if err := fn(h); err != nil {
+			h.l.Errorf("unable to initialize HTTP Signature transport: %s", err)
+			return h /*, err*/
+		}
 	}
-	return h
+	return h /*, nil*/
 }
 
 type privateKey interface {
@@ -92,25 +145,44 @@ func pemEncodePublicKey(prvKey crypto.PrivateKey) string {
 
 // RoundTrip dispatches the received request after signing it
 func (s *HTTPSignatureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	or := req
-	attemptUnauthorized := false
+	or := *req
+	isFetchRequest := req.Method == http.MethodGet || req.Method == http.MethodHead
 
+	if req.URL != nil && req.URL.Path == "" {
+		req.URL.Path = "/"
+	}
 	if s.Actor != nil {
+		req = cloneRequest(&or) // per RoundTripper contract
+		if s.Transport.Alg != nil {
+			// NOTE(marius): we first try signing the request with the RFC9421 compatible mechanism
+			if isFetchRequest {
+				s.Transport.CoveredComponents = FetchCoveredComponents
+			} else {
+				s.Transport.CoveredComponents = PostCoveredComponents
+			}
+
+			res, err := s.Transport.RoundTrip(req)
+			if err == nil && res.StatusCode < http.StatusBadRequest {
+				return res, nil
+			}
+		}
+
+		// NOTE(marius): if the RFC9421 signed request has failed (possibly due to the server not supporting it)
+		// we fall back to signing with the draft 6 compatible algorithm.
 		lctx := lw.Ctx{"key": pemEncodePublicKey(s.Key), "actor": s.Actor.ID}
-		req = cloneRequest(or) // per RoundTripper contract
 		if err := s.signRequest(req); err != nil && s.l != nil {
 			s.l.WithContext(lctx, lw.Ctx{"err": err.Error()}).Errorf("unable to sign request")
 		} else {
 			s.l.WithContext(lctx).Debugf("signed request")
 		}
-
-		// NOTE(marius): for GET/HEAD requests we should try again without the authorization header
-		// if the RoundTrip fails to produce a response.
-		attemptUnauthorized = req.Method == http.MethodGet || req.Method == http.MethodHead
 	}
 
-	res1, err := s.Base.RoundTrip(req)
-	if !attemptUnauthorized || err == nil {
+	res1, err := s.BaseTransport.RoundTrip(req)
+	// NOTE(marius): if the RoundTrip fails to produce a response and this is a fetch request,
+	// we can try again with the original request which doesn't have the Signature header.
+	//
+	// For the other types of requests that have succeeded, we return now.
+	if !isFetchRequest || err == nil {
 		return res1, err
 	}
 
@@ -121,8 +193,7 @@ func (s *HTTPSignatureTransport) RoundTrip(req *http.Request) (*http.Response, e
 	//
 	// I detailed that faulty behaviour in ticket:
 	//  https://todo.sr.ht/~mariusor/go-activitypub/301
-	req = cloneRequest(or) // per RoundTripper contract
-	return s.Base.RoundTrip(req)
+	return s.BaseTransport.RoundTrip(&or)
 }
 
 func toCryptoPublicKey(key vocab.PublicKey) (crypto.PublicKey, error) {
@@ -142,14 +213,7 @@ func (s *HTTPSignatureTransport) signRequest(req *http.Request) error {
 		return errors.Newf("unable to sign request, invalid Actor public key ID")
 	}
 
-	keyID, err := s.Actor.PublicKey.ID.URL()
-	if err != nil {
-		return errors.Annotatef(err, "unable to sign request, Actor public key ID is not a valid URL")
-	}
-	actorPubKey, err := toCryptoPublicKey(s.Actor.PublicKey)
-	if err != nil {
-		return errors.Annotatef(err, "unable to sign request, Actor public key type %T is invalid", actorPubKey)
-	}
+	keyID := s.Actor.PublicKey.ID
 
 	headers := HeadersToSign
 	bodyBuf := bytes.Buffer{}
@@ -161,34 +225,21 @@ func (s *HTTPSignatureTransport) signRequest(req *http.Request) error {
 	}
 
 	algos := make([]httpsig.Algorithm, 0)
-	switch prv := s.Key.(type) {
+	switch s.Key.(type) {
 	case *rsa.PrivateKey:
 		algos = append(algos, httpsig.RSA_SHA256, httpsig.RSA_SHA512)
-		if !prv.PublicKey.Equal(actorPubKey) {
-			return keyMismatchErr(err)
-		}
 	case *ecdsa.PrivateKey:
 		algos = append(algos, httpsig.ECDSA_SHA512, httpsig.ECDSA_SHA256)
-		if !prv.PublicKey.Equal(actorPubKey) {
-			return keyMismatchErr(err)
-		}
 	case ed25519.PrivateKey:
 		algos = append(algos, httpsig.ED25519)
-		if pubBytes, ok := prv.Public().([]byte); ok {
-			if actorPubBytes, ok := actorPubKey.([]byte); ok {
-				if !bytes.Equal(actorPubBytes, pubBytes) {
-					return keyMismatchErr(err)
-				}
-			}
-		}
 	}
 
 	// NOTE(marius): The only http-signatures accepted by Mastodon instances is "Signature", not "Authorization"
-	signer, _, err := httpsig.NewSigner(algos, digestAlgorithm, headers, httpsig.Signature, signatureExpiration)
+	sig, _, err := httpsig.NewSigner(algos, digestAlgorithm, headers, httpsig.Signature, signatureExpiration)
 	if err != nil {
 		return err
 	}
-	if err = signer.SignRequest(s.Key, keyID.String(), req, bodyBuf.Bytes()); err != nil {
+	if err = sig.SignRequest(s.Key, string(keyID), req, bodyBuf.Bytes()); err != nil {
 		return err
 	}
 	return nil

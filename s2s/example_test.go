@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-ap/activitypub"
+	vocab "github.com/go-ap/activitypub"
 )
 
 var (
@@ -33,32 +33,36 @@ G6aFKaqQfOXKCyWoUiVknQJAXrlgySFci/2ueKlIE1QqIiLSZ8V8OlpFLRnb1pzI
 	prv, _    = x509.ParsePKCS1PrivateKey(block.Bytes)
 	millenium = time.Date(2001, time.January, 1, 0, 0, 0, 0, time.UTC)
 
-	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Printf("%s", r.Header.Get("Signature"))
+	actor = func() *vocab.Actor {
+		actor := new(vocab.Actor)
+		actor.ID = "https://example.com/~johndoe"
+
+		pub := prv.Public()
+		pubEnc, _ := x509.MarshalPKIXPublicKey(pub)
+		pubEncoded := pem.EncodeToMemory(&pem.Block{
+			Type:  "PUBLIC KEY",
+			Bytes: pubEnc,
+		})
+
+		actor.PublicKey = vocab.PublicKey{
+			ID:           vocab.IRI(fmt.Sprintf("%s#main", actor.ID)),
+			Owner:        actor.ID,
+			PublicKeyPem: string(pubEncoded),
+		}
+		return actor
+	}()
+
+	handlerFn = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Printf("%s\n", r.Header.Get("Signature"))
 		w.WriteHeader(http.StatusOK)
-	}))
+	})
 )
 
-func ExampleHTTPSignatureTransport_RoundTrip() {
-	actor := new(activitypub.Actor)
-	actor.ID = "https://example.com/~johndoe"
+func ExampleHTTPSignatureTransport_RoundTrip_draft6() {
+	srv := httptest.NewServer(handlerFn)
+	tr := New(WithTransport(http.DefaultTransport), WithActor(actor, prv), NoRFC9421)
 
-	pub := prv.Public()
-	pubEnc, _ := x509.MarshalPKIXPublicKey(pub)
-	pubEncoded := pem.EncodeToMemory(&pem.Block{
-		Type:  "PUBLIC KEY",
-		Bytes: pubEnc,
-	})
-
-	actor.PublicKey = activitypub.PublicKey{
-		ID:           activitypub.IRI(fmt.Sprintf("%s#main", actor.ID)),
-		Owner:        actor.ID,
-		PublicKeyPem: string(pubEncoded),
-	}
-
-	tr := New(WithTransport(http.DefaultTransport), WithActor(actor, prv))
-
-	// The below functionality would be equivalent to this, more idiomatic, usage:
+	// The below functionality would be equivalent to the following usage:
 	//http.DefaultClient.Transport = tr
 	//res, err := http.Get(srv.URL)
 
@@ -70,5 +74,5 @@ func ExampleHTTPSignatureTransport_RoundTrip() {
 	_, _ = tr.RoundTrip(req)
 
 	// Output:
-	// keyId="https://example.com/~johndoe#main",algorithm="hs2019",headers="(request-target) host date",signature="lotUyRDWnYs/AxAy+oOMAcgXPaUXsCjn8yjhPsJ7o/Ek2Q66e61V57qTALgBU+zHftTj9u/dHZehp/1M/JKhkygiEw2Av16MzpNFmsC6lxMTP4Pvs9wxXxLPXQKWzlYVaHKlEzRMoFI3AJyRlf/eT2mNoJVh1f89ETV704Jl8eE="
+	// keyId="https://example.com/~johndoe#main",algorithm="hs2019",headers="(request-target) host date",signature="PYSZQkKUmr9ZDxuNCLe69krLB/0bsprA/K4p4+l0xIINcUBfhDBJNPkN64Omm1tdraTsWfh2JBWQeIdEAW6mm72ERCvqyOldszpiS/PkkVVApduI8tmhSDaoy0I/E3VGanZomEwER5E3VLerAu7ENy8lZrbsYUP7T+pZ+IeMBlM="
 }

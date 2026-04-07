@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	git.sr.ht/~mariusor/cache v0.0.0-20250616110250-18a60a6f9473
 	git.sr.ht/~mariusor/lw v0.0.0-20250325163623-1639f3fb0e0d
+	github.com/common-fate/httpsig v0.2.1
 	github.com/go-ap/activitypub v0.0.0-20260402093412-528d4eaf86a8
 	github.com/go-ap/errors v0.0.0-20260208110149-e1b309365966
 	github.com/go-ap/filters v0.0.0-20260402142207-91104b25ea3d
@@ -27,6 +28,7 @@ require (
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
+	github.com/dunglas/httpsfv v1.1.0 // indirect
 	github.com/go-chi/chi/v5 v5.2.5 // indirect
 	github.com/jdkato/prose v1.2.1 // indirect
 	github.com/leporo/sqlf v1.4.0 // indirect
