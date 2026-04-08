@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	vocab "github.com/go-ap/activitypub"
+	"github.com/go-ap/errors"
 )
 
 type Transport struct {
@@ -26,13 +27,23 @@ var shouldProxyStatuses = []int{http.StatusForbidden, http.StatusUnauthorized}
 // If the server requires authorization, that should be handled by the Base transport - using most likely the OAuth2
 // round tripper.
 func (t Transport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req == nil {
+		return nil, errors.Newf("nil request")
+	}
+	proxyURL, err := t.ProxyURL.URL()
+	if err != nil {
+		return nil, err
+	}
+
 	needsProxying := req.Method == http.MethodGet
-	proxyURL, _ := t.ProxyURL.URL()
 	// NOTE(marius): if the request is done to the same host as the proxyUrl we most likely don't need to use the proxy
 	if proxyURL == nil || strings.EqualFold(proxyURL.Host, req.URL.Host) {
 		needsProxying = false
 	}
 
+	if t.Base == nil {
+		t.Base = http.DefaultTransport
+	}
 	res, err := t.Base.RoundTrip(req)
 	if err != nil {
 		return nil, err
@@ -78,7 +89,7 @@ func WithProxyURL(proxyURL vocab.IRI) OptionFn {
 
 func WithActor(act *vocab.Actor) OptionFn {
 	return func(h *Transport) error {
-		if act.Endpoints != nil && !vocab.EmptyIRI.Equal(act.Endpoints.ProxyURL) {
+		if act != nil && act.Endpoints != nil && !vocab.EmptyIRI.Equal(act.Endpoints.ProxyURL) {
 			h.ProxyURL = act.Endpoints.ProxyURL
 		}
 		return nil
@@ -89,7 +100,6 @@ var _ http.RoundTripper = new(Transport)
 
 func New(initFns ...OptionFn) http.RoundTripper {
 	h := new(Transport)
-	h.Base = &http.Transport{}
 
 	for _, fn := range initFns {
 		_ = fn(h)
@@ -103,6 +113,9 @@ func New(initFns ...OptionFn) http.RoundTripper {
 // buildProxyRequest returns a clone of the provided *http.Request.
 // The clone is a shallow copy of the struct and its Header map.
 func buildProxyRequest(r *http.Request, proxyUrl *url.URL) *http.Request {
+	if proxyUrl == nil || r == nil {
+		return r
+	}
 	// shallow copy of the struct
 	r2 := new(http.Request)
 	*r2 = *r
