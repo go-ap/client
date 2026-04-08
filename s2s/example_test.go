@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	prvPem = `-----BEGIN RSA PRIVATE KEY-----
+	prvPemRSA = `-----BEGIN RSA PRIVATE KEY-----
 MIICXgIBAAKBgQDCFENGw33yGihy92pDjZQhl0C36rPJj+CvfSC8+q28hxA161QF
 NUd13wuCTUcq0Qd2qsBe/2hFyc2DCJJg0h1L78+6Z4UMR7EOcpfdUE9Hf3m/hs+F
 UR45uBJeDK1HSFHD8bHKD6kv8FPGfJTotc+2xjJwoYi+1hqp1fIekaxsyQIDAQAB
@@ -29,15 +29,14 @@ G6aFKaqQfOXKCyWoUiVknQJAXrlgySFci/2ueKlIE1QqIiLSZ8V8OlpFLRnb1pzI
 7U1yQXnTAEFYM560yJlzUpOb1V4cScGd365tiSMvxLOvTA==
 -----END RSA PRIVATE KEY-----`
 
-	block, _  = pem.Decode([]byte(prvPem))
-	prv, _    = x509.ParsePKCS1PrivateKey(block.Bytes)
+	block, _  = pem.Decode([]byte(prvPemRSA))
+	prvRSA, _ = x509.ParsePKCS1PrivateKey(block.Bytes)
 	millenium = time.Date(2001, time.January, 1, 0, 0, 0, 0, time.UTC)
 
 	actor = func() *vocab.Actor {
 		actor := new(vocab.Actor)
 		actor.ID = "https://example.com/~johndoe"
-
-		pub := prv.Public()
+		pub := prvRSA.Public()
 		pubEnc, _ := x509.MarshalPKIXPublicKey(pub)
 		pubEncoded := pem.EncodeToMemory(&pem.Block{
 			Type:  "PUBLIC KEY",
@@ -58,9 +57,9 @@ G6aFKaqQfOXKCyWoUiVknQJAXrlgySFci/2ueKlIE1QqIiLSZ8V8OlpFLRnb1pzI
 	})
 )
 
-func ExampleHTTPSignatureTransport_RoundTrip_draft6() {
+func ExampleHTTPSignatureTransport_RoundTrip_draft() {
 	srv := httptest.NewServer(handlerFn)
-	tr := New(WithTransport(http.DefaultTransport), WithActor(actor, prv), NoRFC9421)
+	tr := New(WithTransport(http.DefaultTransport), WithActor(actor, prvRSA), NoRFC9421)
 
 	// The below functionality would be equivalent to the following usage:
 	//http.DefaultClient.Transport = tr

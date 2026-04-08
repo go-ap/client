@@ -59,29 +59,37 @@ func WithActor(act *vocab.Actor, prv crypto.PrivateKey) OptionFn {
 	return func(h *HTTPSignatureTransport) error {
 		h.Actor = act
 		h.Key = prv
-		h.Transport.KeyID = string(act.PublicKey.ID)
 
+		if act == nil {
+			return nil
+		}
+
+		h.Transport.KeyID = string(act.PublicKey.ID)
 		actorPubKey, err := toCryptoPublicKey(act.PublicKey)
 		if err != nil {
 			return errors.Annotatef(err, "unable to sign request, Actor public key type %T is invalid", actorPubKey)
+		}
+
+		if prv == nil {
+			return nil
 		}
 		switch pk := prv.(type) {
 		case *rsa.PrivateKey:
 			pub, _ := pk.Public().(*rsa.PublicKey)
 			if !pub.Equal(actorPubKey) {
-				return keyMismatchErr(err)
+				return keyMismatchErr(pk, actorPubKey)
 			}
 			h.Transport.Alg = r.NewRSAPKCS256Signer(pk)
 		case *ecdsa.PrivateKey:
 			pub, _ := pk.Public().(*ecdsa.PublicKey)
 			if !pub.Equal(actorPubKey) {
-				return keyMismatchErr(err)
+				return keyMismatchErr(pk, actorPubKey)
 			}
 			h.Transport.Alg = e.NewP384Signer(pk)
 		case ed25519.PrivateKey:
 			pub, _ := pk.Public().(ed25519.PublicKey)
 			if !pub.Equal(actorPubKey) {
-				return keyMismatchErr(err)
+				return keyMismatchErr(pk, actorPubKey)
 			}
 			h.Transport.Alg = &ed.Ed25519{PrivateKey: pk, PublicKey: pub}
 		}
@@ -204,8 +212,8 @@ func toCryptoPublicKey(key vocab.PublicKey) (crypto.PublicKey, error) {
 	return x509.ParsePKIXPublicKey(block.Bytes)
 }
 
-func keyMismatchErr(err error) error {
-	return errors.Annotatef(err, "unable to sign request, there's a mismatch between the Actor's public and private key")
+func keyMismatchErr(pk crypto.PrivateKey, pub crypto.PublicKey) error {
+	return errors.Newf("unable to sign request, mismatch between the Actor's public and private key: %T : %T", pub, pk)
 }
 
 func (s *HTTPSignatureTransport) signRequest(req *http.Request) error {
