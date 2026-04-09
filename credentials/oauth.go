@@ -27,8 +27,9 @@ const (
 
 	minPort               = 1024
 	LocalInterfaceAddress = "127.0.0.1"
-	authWaitTime          = 90 * time.Second
 )
+
+var authWaitDuration = 90 * time.Second
 
 var RandPort = minPort + mrand.IntN(65536-minPort)
 
@@ -157,20 +158,29 @@ func (c *C2S) Refresh(ctx context.Context) error {
 }
 
 func (c *C2S) Config() *oauth2.Config {
+	if c == nil {
+		return nil
+	}
 	return &c.Conf
 }
 
 func (c *C2S) Token() *oauth2.Token {
+	if c == nil {
+		return nil
+	}
 	tok := c.Tok
 	return tok
 }
 
 func (c *C2S) ID() vocab.IRI {
+	if c == nil {
+		return vocab.EmptyIRI
+	}
 	return c.IRI
 }
 
 func (c *C2S) Sign(r *http.Request) error {
-	if c.Tok != nil {
+	if c != nil && c.Tok != nil {
 		c.Tok.SetAuthHeader(r)
 	}
 	return nil
@@ -212,8 +222,10 @@ func (c *C2S) Transport(ctx context.Context) http.RoundTripper {
 
 func OAuth2Client(ctx context.Context, c *C2S) *http.Client {
 	httpC := DefaultClient
-	if oauthCl, ok := ctx.Value(oauth2.HTTPClient).(*http.Client); ok {
-		httpC = oauthCl
+	if ctx != nil {
+		if oauthCl, ok := ctx.Value(oauth2.HTTPClient).(*http.Client); ok {
+			httpC = oauthCl
+		}
 	}
 	if httpC == nil {
 		httpC = &http.Client{}
@@ -254,16 +266,18 @@ func openbrowser(url string) error {
 }
 
 func dumbProgressBar(ctx context.Context) {
-	start := time.Now()
+	start := time.Now().Truncate(time.Second)
+	ticker := time.NewTicker(time.Second)
+	wd := authWaitDuration + time.Second
+	wait := time.NewTimer(wd)
 	for {
 		select {
 		case <-ctx.Done():
-			break
-		default:
-			time.Sleep(time.Second)
-			dur := time.Now().Sub(start.Add(time.Second))
-			fmt.Printf("Waiting for %s", (authWaitTime - dur).Truncate(time.Second).String())
-			fmt.Print("\r")
+			return
+		case <-wait.C:
+			return
+		case cur := <-ticker.C:
+			fmt.Printf("\rWaiting for %s\r", (wd - cur.Truncate(time.Second).Sub(start)).Truncate(time.Second).String())
 		}
 	}
 }
@@ -308,7 +322,7 @@ func handleOAuth2Flow(ctx context.Context, app *oauth2.Config) (*oauth2.Token, e
 
 	callbackCh := make(chan callbackResponse)
 
-	ctx, cancelFn := context.WithTimeout(ctx, authWaitTime)
+	ctx, cancelFn := context.WithTimeout(ctx, authWaitDuration)
 	defer cancelFn()
 
 	fn := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

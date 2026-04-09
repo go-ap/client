@@ -1,6 +1,8 @@
 package client
 
 import (
+	"net/http"
+	"reflect"
 	"testing"
 
 	vocab "github.com/go-ap/activitypub"
@@ -43,4 +45,29 @@ func TestClient_Put(t *testing.T) {
 
 func TestClient_Delete(t *testing.T) {
 	t.Skipf("TODO")
+}
+
+func Test_getTransportWithTLSValidation(t *testing.T) {
+	type args struct {
+		rt   http.RoundTripper
+		skip bool
+	}
+	tests := []struct {
+		name string
+		args args
+		want http.RoundTripper
+	}{
+		{
+			name: "empty",
+			args: args{},
+			want: defaultTransport,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := getTransportWithTLSValidation(tt.args.rt, tt.args.skip); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("getTransportWithTLSValidation() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }

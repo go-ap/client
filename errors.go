@@ -52,14 +52,14 @@ func (e err) Unwrap() error {
 func (e err) Format(s fmt.State, verb rune) {
 	switch verb {
 	case 's', 'v':
-		io.WriteString(s, e.msg)
+		_, _ = io.WriteString(s, e.msg)
 		switch {
 		case s.Flag('+'):
 			if e.err == nil {
 				return
 			}
-			io.WriteString(s, ": ")
-			io.WriteString(s, fmt.Sprintf("%+s", e.err))
+			_, _ = io.WriteString(s, ": ")
+			_, _ = io.WriteString(s, fmt.Sprintf("%+s", e.err))
 		}
 	}
 }
