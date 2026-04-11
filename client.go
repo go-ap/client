@@ -337,46 +337,46 @@ func (c C) Delete(url, contentType string, body io.Reader) (*http.Response, erro
 	return c.do(context.Background(), url, http.MethodDelete, contentType, body)
 }
 
-func (c C) toCollection(ctx context.Context, url vocab.IRI, a vocab.Item) (vocab.IRI, vocab.Item, error) {
-	if len(url) == 0 {
-		return "", nil, errf("invalid URL to post to").iri(url)
+func (c C) toCollection(ctx context.Context, colIRI vocab.IRI, a vocab.Item) (vocab.IRI, vocab.Item, error) {
+	if len(colIRI) == 0 {
+		return "", nil, errf("invalid URL to post to").iri(colIRI)
 	}
 	body, err := jsonld.WithContext(jsonld.IRI(vocab.ActivityBaseURI), jsonld.IRI(vocab.SecurityContextURI)).Marshal(a)
 	if err != nil {
-		return "", nil, errf("unable to marshal activity").iri(url)
+		return "", nil, errf("unable to marshal activity").iri(colIRI)
 	}
 	var resp *http.Response
-	var iri vocab.IRI
-	resp, err = c.do(ctx, url.String(), http.MethodPost, ContentTypeActivityJson, bytes.NewReader(body))
+	var resultIRI vocab.IRI
+	resp, err = c.do(ctx, string(colIRI), http.MethodPost, ContentTypeActivityJson, bytes.NewReader(body))
 	if err != nil {
-		return iri, nil, err
+		return resultIRI, nil, err
 	}
-	iri = vocab.IRI(resp.Header.Get("Location"))
+	resultIRI = vocab.IRI(resp.Header.Get("Location"))
 
 	if resp.StatusCode >= http.StatusBadRequest && resp.StatusCode != http.StatusGone {
 		if err = errors.FromResponse(resp); err == nil {
-			err = errf("invalid status received: %d", resp.StatusCode).iri(iri)
+			err = errf("invalid status received: %d", resp.StatusCode).iri(resultIRI)
 		} else {
-			err = errf("invalid status received: %d", resp.StatusCode).iri(iri).annotate(err)
+			err = errf("invalid status received: %d", resp.StatusCode).iri(resultIRI).annotate(err)
 		}
-		return iri, nil, err
+		return resultIRI, nil, err
 	}
 	// NOTE(marius): here we might want to group the Close with a Flush of the
 	// Body using io.Copy(ioutil.Discard, resp.Body)
 	defer resp.Body.Close()
 	resBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		c.errFn(Ctx{"iri": url, "status": resp.Status})(err.Error())
-		return iri, nil, err
+		c.errFn(Ctx{"iri": colIRI, "status": resp.Status})(err.Error())
+		return resultIRI, nil, err
 	}
 	if len(resBody) == 0 {
-		return iri, nil, nil
+		return resultIRI, nil, nil
 	}
 	it, err := vocab.UnmarshalJSON(resBody)
 	if err != nil {
-		return iri, nil, err
+		return resultIRI, nil, err
 	}
-	return iri, it, nil
+	return resultIRI, it, nil
 }
 
 // ToCollection

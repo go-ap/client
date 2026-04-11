@@ -1,16 +1,28 @@
 package s2s
 
 import (
+	"bytes"
+	"context"
 	"crypto"
+	"crypto/ed25519"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"git.sr.ht/~mariusor/lw"
+	"github.com/common-fate/httpsig/alg_ed25519"
+	"github.com/common-fate/httpsig/signer"
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/errors"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestWithActor(t *testing.T) {
@@ -98,28 +110,50 @@ func TestWithActor(t *testing.T) {
 func TestWithLogger(t *testing.T) {
 	tests := []struct {
 		name    string
-		l       lw.Logger
+		l       *bytes.Buffer
 		wantErr error
 	}{
 		{
 			name: "empty",
 			l:    nil,
 		},
+		{
+			name: "logger with test output",
+			l:    &bytes.Buffer{},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tr := new(HTTPSignatureTransport)
-			optionFn := WithLogger(tt.l)
+			var ll lw.Logger
+			if tt.l != nil {
+				ll = lw.Dev(lw.SetOutput(tt.l))
+			}
+			optionFn := WithLogger(ll)
 
 			if err := optionFn(tr); !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
 				t.Errorf("WithLogger() = error %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
 			}
 
-			if !cmp.Equal(tr.l, tt.l) {
-				t.Errorf("WithLogger() = %s", cmp.Diff(tt.l, tt.l))
+			if tr.l == nil {
+				if tr.l != ll {
+					t.Errorf("WithLogger() should not be nil")
+				}
+			} else if _, ok := tr.l.(lw.Logger); !ok {
+				t.Errorf("WithLogger() %T should be compatible with %T", tr.l, lw.Logger(nil))
 			}
-			if tt.l != nil && tr.OnDeriveSigningString == nil {
-				t.Errorf("WithLogger() RFC9421 debug function should not be nil: %p", tr.OnDeriveSigningString)
+			if tt.l != nil {
+				if tr.OnDeriveSigningString == nil {
+					t.Errorf("WithLogger() RFC9421 debug function should not be nil: %p", tr.OnDeriveSigningString)
+				} else {
+					mockSignature := "test"
+					tr.OnDeriveSigningString(context.Background(), mockSignature)
+					logMsg := make(map[string]string)
+					_ = json.NewDecoder(tt.l).Decode(&logMsg)
+					if msg, ok := logMsg["message"]; ok && !strings.HasSuffix(msg, mockSignature) {
+						t.Errorf("WithLogger() logged message %s, does not have expected suffix %s", msg, mockSignature)
+					}
+				}
 			}
 		})
 	}
@@ -150,8 +184,109 @@ func TestWithApplicationTag(t *testing.T) {
 			if err := optionFn(tr); !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
 				t.Errorf("WithApplicationTag() = error %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
 			}
-			if tt.t != tr.Tag {
+			if tt.t != tr.Transport.Tag {
 				t.Errorf("WithApplicationTag() = %s, want %s", tr.Tag, tt.t)
+			}
+		})
+	}
+}
+
+func TestNew(t *testing.T) {
+	tests := []struct {
+		name    string
+		initFns []OptionFn
+		want    *HTTPSignatureTransport
+	}{
+		{
+			name:    "empty",
+			initFns: nil,
+			want: &HTTPSignatureTransport{
+				Transport: signer.Transport{CoveredComponents: FetchCoveredComponents},
+			},
+		},
+		{
+			name:    "with Actor",
+			initFns: []OptionFn{WithActor(actorED25519, prvED25519)},
+			want: &HTTPSignatureTransport{
+				Transport: signer.Transport{
+					KeyID:             string(actorED25519.PublicKey.ID),
+					CoveredComponents: FetchCoveredComponents,
+					Alg: &alg_ed25519.Ed25519{
+						PrivateKey: prvED25519.(ed25519.PrivateKey),
+						PublicKey:  prvED25519.(ed25519.PrivateKey).Public().(ed25519.PublicKey),
+					},
+				},
+				Key:   prvED25519,
+				Actor: actorED25519,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := New(tt.initFns...); !cmp.Equal(got, tt.want, cmpopts.IgnoreUnexported(http.Transport{}, HTTPSignatureTransport{})) {
+				t.Errorf("New() = %s", cmp.Diff(tt.want, got, cmpopts.IgnoreUnexported(http.Transport{}, HTTPSignatureTransport{})))
+			}
+		})
+	}
+}
+
+func TestTransport_RoundTrip(t *testing.T) {
+	tests := []struct {
+		name       string
+		initFns    []OptionFn
+		body       []byte
+		wantStatus int
+		wantErr    error
+	}{
+		{
+			name:       "empty",
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "no RFC9421",
+			body:       []byte("test"),
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "with actor",
+			body:       []byte("test"),
+			initFns:    []OptionFn{WithActor(actorED25519, prvED25519)},
+			wantStatus: http.StatusOK,
+			wantErr:    nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testSignatureHandlerFn := func(w http.ResponseWriter, r *http.Request) {
+				if sig := r.Header.Get("Signature"); sig == "" {
+					t.Logf("RoundTrip() Signature: %s", sig)
+				}
+				if sigInput := r.Header.Get("Signature-Input"); sigInput == "" {
+					t.Logf("RoundTrip() Signature-Input: %s", sigInput)
+				}
+				w.WriteHeader(http.StatusOK)
+			}
+			server := httptest.NewServer(http.HandlerFunc(testSignatureHandlerFn))
+
+			dt := New(tt.initFns...)
+			var req *http.Request
+			if tt.body != nil {
+				req = httptest.NewRequest(http.MethodPost, server.URL, bytes.NewBuffer(tt.body))
+			} else {
+				req = httptest.NewRequest(http.MethodPost, server.URL, nil)
+			}
+			req.Header.Set("Date", time.Now().Format(http.TimeFormat))
+
+			got, err := dt.RoundTrip(req)
+			if (err != nil) && !errors.Is(tt.wantErr, err) {
+				t.Errorf("RoundTrip() error = %v, wanted error %v", err, tt.wantErr)
+				return
+			}
+
+			if tt.wantStatus != got.StatusCode {
+				t.Errorf("RoundTrip() invalid status received = %s, wanted %d %s", got.Status, tt.wantStatus, http.StatusText(tt.wantStatus))
+				return
 			}
 		})
 	}
@@ -201,6 +336,26 @@ DwcMY+iaEAgUTM1wAZ097BDYA7slyqP7
 	}
 )
 
+const StatusFailedTest = http.StatusExpectationFailed
+
+func sameBodyHandler(t *testing.T, bodyBuff, respBuff []byte) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("RoundTrip() handler body read unexpected error = %v", err)
+			w.WriteHeader(StatusFailedTest)
+			return
+		}
+		//wantedBuff = append(wantedBuff, 'a', 'b')
+		if !bytes.Equal(body, bodyBuff) {
+			t.Errorf("RoundTrip() handler request body = %s, different than wanted %s", body, bodyBuff)
+			w.WriteHeader(StatusFailedTest)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(respBuff)
+	}
+}
 func areErrors(a, b any) bool {
 	_, ok1 := a.(error)
 	_, ok2 := b.(error)

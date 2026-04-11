@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"git.sr.ht/~mariusor/lw"
@@ -35,6 +36,9 @@ var (
 type HTTPSignatureTransport struct {
 	signer.Transport
 
+	// m is needed for ensuring the signer.Transport CoveredComponents writes and reads
+	// don't cause a race condition.
+	m     sync.RWMutex
 	Key   crypto.PrivateKey
 	Actor *vocab.Actor
 
@@ -55,6 +59,13 @@ func NoRFC9421(h *HTTPSignatureTransport) error {
 	return nil
 }
 
+func WithCoveredComponents(s ...string) OptionFn {
+	return func(h *HTTPSignatureTransport) error {
+		h.Transport.CoveredComponents = s
+		return nil
+	}
+}
+
 func WithActor(act *vocab.Actor, prv crypto.PrivateKey) OptionFn {
 	return func(h *HTTPSignatureTransport) error {
 		h.Actor = act
@@ -64,12 +75,12 @@ func WithActor(act *vocab.Actor, prv crypto.PrivateKey) OptionFn {
 			return nil
 		}
 
-		h.Transport.KeyID = string(act.PublicKey.ID)
 		actorPubKey, err := toCryptoPublicKey(act.PublicKey)
 		if err != nil {
 			return errors.Annotatef(err, "unable to sign request, Actor public key type %T is invalid", actorPubKey)
 		}
 
+		h.Transport.KeyID = string(act.PublicKey.ID)
 		if prv == nil {
 			return nil
 		}
@@ -100,8 +111,10 @@ func WithActor(act *vocab.Actor, prv crypto.PrivateKey) OptionFn {
 func WithLogger(l lw.Logger) OptionFn {
 	return func(h *HTTPSignatureTransport) error {
 		h.l = l
-		h.Transport.OnDeriveSigningString = func(ctx context.Context, stringToSign string) {
-			l.Debugf("String to sign: %s", stringToSign)
+		if l != nil {
+			h.Transport.OnDeriveSigningString = func(ctx context.Context, stringToSign string) {
+				l.Debugf("String to sign: %s", stringToSign)
+			}
 		}
 		return nil
 	}
@@ -119,9 +132,8 @@ func WithApplicationTag(t string) OptionFn {
 //  that might come from the initialization functions.
 func New(initFns ...OptionFn) *HTTPSignatureTransport {
 	h := new(HTTPSignatureTransport)
-	h.Transport.BaseTransport = &http.Transport{}
+	h.Transport.CoveredComponents = FetchCoveredComponents
 	h.l = nilLogger
-	h.Transport.OnDeriveSigningString = func(_ context.Context, _ string) {}
 	for _, fn := range initFns {
 		if err := fn(h); err != nil {
 			h.l.Errorf("unable to initialize HTTP Signature transport: %s", err)
@@ -153,6 +165,9 @@ func pemEncodePublicKey(prvKey crypto.PrivateKey) string {
 
 // RoundTrip dispatches the received request after signing it
 func (s *HTTPSignatureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if s.BaseTransport == nil {
+		s.BaseTransport = http.DefaultTransport
+	}
 	or := *req
 	isFetchRequest := req.Method == http.MethodGet || req.Method == http.MethodHead
 
@@ -162,13 +177,6 @@ func (s *HTTPSignatureTransport) RoundTrip(req *http.Request) (*http.Response, e
 	if s.Actor != nil {
 		req = cloneRequest(&or) // per RoundTripper contract
 		if s.Transport.Alg != nil {
-			// NOTE(marius): we first try signing the request with the RFC9421 compatible mechanism
-			if isFetchRequest {
-				s.Transport.CoveredComponents = FetchCoveredComponents
-			} else {
-				s.Transport.CoveredComponents = PostCoveredComponents
-			}
-
 			res, err := s.Transport.RoundTrip(req)
 			if err == nil && res.StatusCode < http.StatusBadRequest {
 				return res, nil

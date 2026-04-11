@@ -1,14 +1,12 @@
 package debug
 
 import (
-	"io"
 	"net/http"
+	"net/http/httputil"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/go-ap/errors"
 )
 
 type OptionFn func(transport *Transport) error
@@ -55,11 +53,11 @@ type Transport struct {
 	where string
 }
 
-const boundary = "\n\n====================\n\n"
+const boundary = "\n====================\n"
 
 func (d Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// NOTE(marius): return early if this is not a request with a body
-	if req == nil || req.Body == nil {
+	if req == nil {
 		return d.Base.RoundTrip(req)
 	}
 
@@ -68,16 +66,11 @@ func (d Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return d.Base.RoundTrip(req)
 	}
+	defer ff.Close()
 
-	req.Body = teeCloseReader(req.Body, ff)
-
-	_, _ = ff.WriteString(req.Method)
-	_, _ = ff.WriteString(" ")
-	_, _ = ff.WriteString(req.URL.String())
-	_, _ = ff.WriteString("\n")
-	if len(req.Header) > 0 {
-		_ = req.Header.Write(ff)
-		_, _ = ff.WriteString("\n\n")
+	raw, _ := httputil.DumpRequestOut(req, req.Body != nil)
+	if raw != nil {
+		_, _ = ff.Write(raw)
 	}
 
 	res, err := d.Base.RoundTrip(req)
@@ -85,39 +78,10 @@ func (d Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 
-	res.Body = teeCloseReader(res.Body, ff)
-	_, _ = ff.WriteString(boundary)
-
-	_, _ = ff.WriteString(res.Status)
-	_, _ = ff.WriteString("\n")
-	if len(res.Header) > 0 {
-		_ = res.Header.Write(ff)
-		_, _ = ff.WriteString("\n\n")
+	if raw, _ = httputil.DumpResponse(res, res.Body != nil); raw != nil {
+		_, _ = ff.WriteString(boundary)
+		_, _ = ff.Write(raw)
 	}
 
 	return res, nil
-}
-
-type teeCloser struct {
-	io.Reader
-	closeWriter bool
-	from        io.ReadCloser
-	to          io.WriteCloser
-}
-
-func teeCloseReader(from io.ReadCloser, to io.WriteCloser) *teeCloser {
-	return &teeCloser{
-		Reader: io.TeeReader(from, to),
-		from:   from,
-		to:     to,
-	}
-}
-
-func (t *teeCloser) Close() error {
-	err1 := t.from.Close()
-	if t.closeWriter {
-		err2 := t.to.Close()
-		return errors.Join(err1, err2)
-	}
-	return err1
 }

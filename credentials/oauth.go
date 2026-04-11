@@ -284,11 +284,13 @@ func dumbProgressBar(ctx context.Context) {
 
 const pkceAlphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ234567-._~"
 
+var pkceAlphabetLen = byte(len(pkceAlphabet))
+
 func CodeVerifier() string {
 	src := make([]byte, 43)
 	_, _ = rand.Read(src)
 	for i := range src {
-		src[i] = pkceAlphabet[src[i]%62]
+		src[i] = pkceAlphabet[src[i]%pkceAlphabetLen]
 	}
 	return string(src)
 }

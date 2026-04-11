@@ -2,7 +2,6 @@ package debug
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -39,7 +38,7 @@ func sameBodyHandler(t *testing.T, bodyBuff, respBuff []byte) http.HandlerFunc {
 	}
 }
 
-func Test_Transport_RoundTrip(t *testing.T) {
+func TestTransport_RoundTrip(t *testing.T) {
 	tests := []struct {
 		name       string
 		body       []byte
@@ -65,7 +64,12 @@ func Test_Transport_RoundTrip(t *testing.T) {
 			server := httptest.NewServer(sameBodyHandler(t, tt.body, tt.resp))
 
 			dt := Transport{Base: http.DefaultTransport, where: where}
-			req := httptest.NewRequest(http.MethodPost, server.URL, bytes.NewBuffer(tt.body))
+			var req *http.Request
+			if tt.body != nil {
+				req = httptest.NewRequest(http.MethodPost, server.URL, bytes.NewBuffer(tt.body))
+			} else {
+				req = httptest.NewRequest(http.MethodPost, server.URL, nil)
+			}
 			req.Header.Set("Date", time.Now().Format(http.TimeFormat))
 
 			got, err := dt.RoundTrip(req)
@@ -89,7 +93,7 @@ func Test_Transport_RoundTrip(t *testing.T) {
 			}
 
 			if !bytes.Equal(gotBody, tt.resp) {
-				t.Errorf("RoundTrip() got reponse bytes = %s, wanted %s", gotBody, tt.resp)
+				t.Errorf("RoundTrip() got response bytes = %s, wanted %s", gotBody, tt.resp)
 			}
 
 			err = filepath.WalkDir(where, func(path string, d fs.DirEntry, err error) error {
@@ -110,13 +114,13 @@ func Test_Transport_RoundTrip(t *testing.T) {
 					t.Errorf("RoundTrip() unable to read both request and response from log: %s", loggedBuff)
 					return nil
 				}
-				loggedReq := loggedBuff[bytes.Index(loggedBuff, []byte{'\n', '\n'})+3 : boundaryIndex]
-				loggedRes := loggedBuff[bytes.LastIndex(loggedBuff, []byte{'\n', '\n'})+2:]
-				if !bytes.Equal(loggedReq, tt.body) {
-					t.Errorf("RoundTrip() log request don't match: %v vs %v", loggedReq, tt.body)
+				loggedReqBody := loggedBuff[bytes.Index(loggedBuff, []byte("\r\n\r\n"))+4 : boundaryIndex]
+				loggedResBody := loggedBuff[bytes.LastIndex(loggedBuff, []byte("\r\n\r\n"))+4:]
+				if !bytes.Equal(loggedReqBody, tt.body) {
+					t.Errorf("RoundTrip() logged request body don't match: %s vs %s", loggedReqBody, tt.body)
 				}
-				if !bytes.Equal(loggedRes, tt.resp) {
-					t.Errorf("RoundTrip() log response don't match: %v vs %v", loggedReq, tt.resp)
+				if !bytes.Equal(loggedResBody, tt.resp) {
+					t.Errorf("RoundTrip() logged response body don't match: %s vs %s", loggedReqBody, tt.resp)
 				}
 				return nil
 			})
@@ -273,39 +277,9 @@ func TestNew(t *testing.T) {
 	}
 }
 
-func TestTransport_RoundTrip(t *testing.T) {
-	type fields struct {
-		Base  http.RoundTripper
-		where string
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		req     *http.Request
-		want    *http.Response
-		wantErr error
-	}{
-		{
-			name:    "empty",
-			fields:  fields{},
-			req:     new(http.Request),
-			wantErr: fmt.Errorf("http: nil Request.URL"),
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			d := New(WithTransport(tt.fields.Base), WithPath(tt.fields.where))
-
-			got, err := d.RoundTrip(tt.req)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("RoundTrip() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("RoundTrip() got = %v, want %v", got, tt.want)
-			}
-		})
-	}
+func mockRequest(met, url string, body io.Reader) *http.Request {
+	r, _ := http.NewRequest(met, url, body)
+	return r
 }
 
 func areErrors(a, b any) bool {

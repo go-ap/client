@@ -2,21 +2,21 @@ package client
 
 import (
 	"context"
-	"fmt"
 
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/errors"
+	"github.com/go-ap/filters"
 )
 
 type PubGetter interface {
-	Inbox(ctx context.Context, actor vocab.Item, filters ...FilterFn) (vocab.CollectionInterface, error)
-	Outbox(ctx context.Context, actor vocab.Item, filters ...FilterFn) (vocab.CollectionInterface, error)
-	Following(ctx context.Context, actor vocab.Item, filters ...FilterFn) (vocab.CollectionInterface, error)
-	Followers(ctx context.Context, actor vocab.Item, filters ...FilterFn) (vocab.CollectionInterface, error)
-	Likes(ctx context.Context, object vocab.Item, filters ...FilterFn) (vocab.CollectionInterface, error)
-	Liked(ctx context.Context, actor vocab.Item, filters ...FilterFn) (vocab.CollectionInterface, error)
-	Replies(ctx context.Context, object vocab.Item, filters ...FilterFn) (vocab.CollectionInterface, error)
-	Collection(ctx context.Context, i vocab.IRI, filters ...FilterFn) (vocab.CollectionInterface, error)
+	Inbox(ctx context.Context, actor vocab.Item, ff ...filters.Check) (vocab.CollectionInterface, error)
+	Outbox(ctx context.Context, actor vocab.Item, ff ...filters.Check) (vocab.CollectionInterface, error)
+	Following(ctx context.Context, actor vocab.Item, ff ...filters.Check) (vocab.CollectionInterface, error)
+	Followers(ctx context.Context, actor vocab.Item, ff ...filters.Check) (vocab.CollectionInterface, error)
+	Likes(ctx context.Context, object vocab.Item, ff ...filters.Check) (vocab.CollectionInterface, error)
+	Liked(ctx context.Context, actor vocab.Item, ff ...filters.Check) (vocab.CollectionInterface, error)
+	Replies(ctx context.Context, object vocab.Item, ff ...filters.Check) (vocab.CollectionInterface, error)
+	Collection(ctx context.Context, i vocab.IRI, ff ...filters.Check) (vocab.CollectionInterface, error)
 
 	Actor(ctx context.Context, iri vocab.IRI) (*vocab.Actor, error)
 	Activity(ctx context.Context, iri vocab.IRI) (*vocab.Activity, error)
@@ -33,76 +33,76 @@ type PubClient interface {
 	PubSubmitter
 }
 
-// Inbox
-func (c C) Inbox(ctx context.Context, actor vocab.Item, filters ...FilterFn) (vocab.CollectionInterface, error) {
+// Inbox fetches the inbox collection of the actor Item. It applies filters to the received collection object.
+func (c C) Inbox(ctx context.Context, actor vocab.Item, ff ...filters.Check) (vocab.CollectionInterface, error) {
 	if err := validateActor(actor); err != nil {
 		return nil, err
 	}
-	return c.collection(ctx, inbox(actor, filters...))
+	return c.collection(ctx, inbox(actor, ff...))
 }
 
-// Outbox
-func (c C) Outbox(ctx context.Context, actor vocab.Item, filters ...FilterFn) (vocab.CollectionInterface, error) {
+// Outbox fetches the outbox collection of the actor Item. It applies filters to the received collection object.
+func (c C) Outbox(ctx context.Context, actor vocab.Item, ff ...filters.Check) (vocab.CollectionInterface, error) {
 	if err := validateActor(actor); err != nil {
 		return nil, err
 	}
-	return c.collection(ctx, outbox(actor, filters...))
+	return c.collection(ctx, outbox(actor, ff...))
 }
 
-// Following
-func (c C) Following(ctx context.Context, actor vocab.Item, filters ...FilterFn) (vocab.CollectionInterface, error) {
+// Following fetches the following collection of the actor Item. It applies filters to the received collection object.
+func (c C) Following(ctx context.Context, actor vocab.Item, ff ...filters.Check) (vocab.CollectionInterface, error) {
 	if err := validateActor(actor); err != nil {
 		return nil, err
 	}
-	return c.collection(ctx, following(actor, filters...))
+	return c.collection(ctx, following(actor, ff...))
 }
 
-// Followers
-func (c C) Followers(ctx context.Context, actor vocab.Item, filters ...FilterFn) (vocab.CollectionInterface, error) {
+// Followers fetches the followers collection of the actor Item. It applies filters to the received collection object.
+func (c C) Followers(ctx context.Context, actor vocab.Item, ff ...filters.Check) (vocab.CollectionInterface, error) {
 	if err := validateActor(actor); err != nil {
 		return nil, err
 	}
-	return c.collection(ctx, followers(actor, filters...))
+	return c.collection(ctx, followers(actor, ff...))
 }
 
-// Likes
-func (c C) Likes(ctx context.Context, object vocab.Item, filters ...FilterFn) (vocab.CollectionInterface, error) {
+// Likes fetches the likes collection of the object Item. It applies filters to the received collection object.
+func (c C) Likes(ctx context.Context, object vocab.Item, ff ...filters.Check) (vocab.CollectionInterface, error) {
 	if err := validateObject(object); err != nil {
 		return nil, err
 	}
-	return c.collection(ctx, likes(object, filters...))
+	return c.collection(ctx, likes(object, ff...))
 }
 
-// Liked
-func (c C) Liked(ctx context.Context, actor vocab.Item, filters ...FilterFn) (vocab.CollectionInterface, error) {
+// Liked fetches the liked collection of the actor Item. It applies filters to the received collection object.
+func (c C) Liked(ctx context.Context, actor vocab.Item, ff ...filters.Check) (vocab.CollectionInterface, error) {
 	if err := validateActor(actor); err != nil {
 		return nil, err
 	}
-	return c.collection(ctx, liked(actor, filters...))
+	return c.collection(ctx, liked(actor, ff...))
 }
 
-// Replies
-func (c C) Replies(ctx context.Context, object vocab.Item, filters ...FilterFn) (vocab.CollectionInterface, error) {
+// Replies fetches the replies collection of the object Item. It applies filters to the received collection object.
+func (c C) Replies(ctx context.Context, object vocab.Item, ff ...filters.Check) (vocab.CollectionInterface, error) {
 	if err := validateObject(object); err != nil {
 		return nil, err
 	}
-	return c.collection(ctx, replies(object, filters...))
+	return c.collection(ctx, replies(object, ff...))
 }
 
-// Shares
-func (c C) Shares(ctx context.Context, object vocab.Item, filters ...FilterFn) (vocab.CollectionInterface, error) {
+// Shares fetches the shares collection of the object Item. It applies filters to the received collection object.
+func (c C) Shares(ctx context.Context, object vocab.Item, ff ...filters.Check) (vocab.CollectionInterface, error) {
 	if err := validateObject(object); err != nil {
 		return nil, err
 	}
-	return c.collection(ctx, shares(object, filters...))
+	return c.collection(ctx, shares(object, ff...))
 }
 
-// Collection
-func (c C) Collection(ctx context.Context, i vocab.IRI, filters ...FilterFn) (vocab.CollectionInterface, error) {
-	return c.collection(ctx, iri(i, filters...))
+// Collection fetches the iri [vocab.IRI] as a collection. It applies filters to the received object.
+func (c C) Collection(ctx context.Context, iri vocab.IRI, ff ...filters.Check) (vocab.CollectionInterface, error) {
+	return c.collection(ctx, irif(iri, ff...))
 }
 
-// Actor
+// Actor dereferences the iri [vocab.IRI] as an actor object.
 func (c C) Actor(ctx context.Context, iri vocab.IRI) (*vocab.Actor, error) {
 	it, err := c.object(ctx, iri)
 	if err != nil {
@@ -116,21 +116,21 @@ func (c C) Actor(ctx context.Context, iri vocab.IRI) (*vocab.Actor, error) {
 	return actor, err
 }
 
-// Activity
+// Activity dereferences the iri [vocab.IRI] as an activity object.
 func (c C) Activity(ctx context.Context, iri vocab.IRI) (*vocab.Activity, error) {
 	it, err := c.object(ctx, iri)
 	if err != nil {
 		return nil, errors.Annotatef(err, "Unable to load Activity: %s", iri)
 	}
 	var activity *vocab.Activity
-	vocab.OnActivity(it, func(a *vocab.Activity) error {
+	err = vocab.OnActivity(it, func(a *vocab.Activity) error {
 		activity = a
 		return nil
 	})
-	return activity, nil
+	return activity, err
 }
 
-// Object
+// Object dereferences the iri [vocab.IRI] as an object.
 func (c C) Object(ctx context.Context, iri vocab.IRI) (*vocab.Object, error) {
 	it, err := c.object(ctx, iri)
 	if err != nil {
@@ -146,7 +146,7 @@ func (c C) Object(ctx context.Context, iri vocab.IRI) (*vocab.Object, error) {
 
 func (c C) ToOutbox(ctx context.Context, a vocab.Item) (vocab.IRI, vocab.Item, error) {
 	var iri vocab.IRI
-	_ = vocab.OnActivity(a, func(a *vocab.Activity) error {
+	_ = vocab.OnIntransitiveActivity(a, func(a *vocab.IntransitiveActivity) error {
 		// TODO(marius): this needs updating to work with an Actor that is an IRIs or ItemCollection
 		iri = outbox(a.Actor)
 		if !vocab.IsIRI(a.Actor) {
@@ -162,7 +162,7 @@ func (c C) ToOutbox(ctx context.Context, a vocab.Item) (vocab.IRI, vocab.Item, e
 
 func (c C) ToInbox(ctx context.Context, a vocab.Item) (vocab.IRI, vocab.Item, error) {
 	var iri vocab.IRI
-	_ = vocab.OnActivity(a, func(a *vocab.Activity) error {
+	_ = vocab.OnIntransitiveActivity(a, func(a *vocab.IntransitiveActivity) error {
 		// TODO(marius): this needs updating to work with an Actor that is an IRIs or ItemCollection
 		iri = inbox(a.Actor)
 		if !vocab.IsIRI(a.Actor) {
@@ -186,6 +186,13 @@ func validateIRIForRequest(i vocab.IRI) error {
 		return errors.Newf("Host is empty")
 	}
 	return nil
+}
+
+func rawFilterQuery(f ...filters.Check) string {
+	if len(f) == 0 {
+		return ""
+	}
+	return "?" + filters.ToValues(f...).Encode()
 }
 
 func (c C) collection(ctx context.Context, i vocab.IRI) (vocab.CollectionInterface, error) {
@@ -223,40 +230,40 @@ func (c C) object(ctx context.Context, i vocab.IRI) (vocab.Item, error) {
 	return c.CtxLoadIRI(ctx, i)
 }
 
-func iri(i vocab.IRI, f ...FilterFn) vocab.IRI {
-	return vocab.IRI(fmt.Sprintf("%s%s", i, rawFilterQuery(f...)))
+func irif(i vocab.IRI, f ...filters.Check) vocab.IRI {
+	return vocab.IRI(string(i) + rawFilterQuery(f...))
 }
 
-func inbox(a vocab.Item, f ...FilterFn) vocab.IRI {
-	return iri(vocab.Inbox.IRI(a), f...)
+func inbox(a vocab.Item, f ...filters.Check) vocab.IRI {
+	return irif(vocab.Inbox.IRI(a), f...)
 }
 
-func outbox(a vocab.Item, f ...FilterFn) vocab.IRI {
-	return iri(vocab.Outbox.IRI(a), f...)
+func outbox(a vocab.Item, f ...filters.Check) vocab.IRI {
+	return irif(vocab.Outbox.IRI(a), f...)
 }
 
-func following(a vocab.Item, f ...FilterFn) vocab.IRI {
-	return iri(vocab.Following.IRI(a), f...)
+func following(a vocab.Item, f ...filters.Check) vocab.IRI {
+	return irif(vocab.Following.IRI(a), f...)
 }
 
-func followers(a vocab.Item, f ...FilterFn) vocab.IRI {
-	return iri(vocab.Followers.IRI(a), f...)
+func followers(a vocab.Item, f ...filters.Check) vocab.IRI {
+	return irif(vocab.Followers.IRI(a), f...)
 }
 
-func liked(a vocab.Item, f ...FilterFn) vocab.IRI {
-	return iri(vocab.Liked.IRI(a), f...)
+func liked(a vocab.Item, f ...filters.Check) vocab.IRI {
+	return irif(vocab.Liked.IRI(a), f...)
 }
 
-func likes(o vocab.Item, f ...FilterFn) vocab.IRI {
-	return iri(vocab.Likes.IRI(o), f...)
+func likes(o vocab.Item, f ...filters.Check) vocab.IRI {
+	return irif(vocab.Likes.IRI(o), f...)
 }
 
-func shares(o vocab.Item, f ...FilterFn) vocab.IRI {
-	return iri(vocab.Shares.IRI(o), f...)
+func shares(o vocab.Item, f ...filters.Check) vocab.IRI {
+	return irif(vocab.Shares.IRI(o), f...)
 }
 
-func replies(o vocab.Item, f ...FilterFn) vocab.IRI {
-	return iri(vocab.Replies.IRI(o), f...)
+func replies(o vocab.Item, f ...filters.Check) vocab.IRI {
+	return irif(vocab.Replies.IRI(o), f...)
 }
 
 func validateActor(a vocab.Item) error {
