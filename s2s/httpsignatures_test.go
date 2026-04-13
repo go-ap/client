@@ -74,7 +74,7 @@ func TestWithActor(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tr := new(HTTPSignatureTransport)
+			tr := new(Transport)
 			optionFn := WithActor(tt.args.act, tt.args.prv)
 
 			if err := optionFn(tr); !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
@@ -124,7 +124,7 @@ func TestWithLogger(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tr := new(HTTPSignatureTransport)
+			tr := new(Transport)
 			var ll lw.Logger
 			if tt.l != nil {
 				ll = lw.Dev(lw.SetOutput(tt.l))
@@ -178,7 +178,7 @@ func TestWithApplicationTag(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tr := new(HTTPSignatureTransport)
+			tr := new(Transport)
 			optionFn := WithApplicationTag(tt.t)
 
 			if err := optionFn(tr); !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
@@ -195,19 +195,19 @@ func TestNew(t *testing.T) {
 	tests := []struct {
 		name    string
 		initFns []OptionFn
-		want    *HTTPSignatureTransport
+		want    *Transport
 	}{
 		{
 			name:    "empty",
 			initFns: nil,
-			want: &HTTPSignatureTransport{
+			want: &Transport{
 				Transport: signer.Transport{CoveredComponents: FetchCoveredComponents},
 			},
 		},
 		{
 			name:    "with Actor",
 			initFns: []OptionFn{WithActor(actorED25519, prvED25519)},
-			want: &HTTPSignatureTransport{
+			want: &Transport{
 				Transport: signer.Transport{
 					KeyID:             string(actorED25519.PublicKey.ID),
 					CoveredComponents: FetchCoveredComponents,
@@ -223,8 +223,8 @@ func TestNew(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := New(tt.initFns...); !cmp.Equal(got, tt.want, cmpopts.IgnoreUnexported(http.Transport{}, HTTPSignatureTransport{})) {
-				t.Errorf("New() = %s", cmp.Diff(tt.want, got, cmpopts.IgnoreUnexported(http.Transport{}, HTTPSignatureTransport{})))
+			if got := New(tt.initFns...); !cmp.Equal(got, tt.want, cmpopts.IgnoreUnexported(http.Transport{}, Transport{})) {
+				t.Errorf("New() = %s", cmp.Diff(tt.want, got, cmpopts.IgnoreUnexported(http.Transport{}, Transport{})))
 			}
 		})
 	}
@@ -259,10 +259,10 @@ func TestTransport_RoundTrip(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testSignatureHandlerFn := func(w http.ResponseWriter, r *http.Request) {
-				if sig := r.Header.Get("Signature"); sig == "" {
+				if sig := r.Header.Get("Signature"); sig != "" {
 					t.Logf("RoundTrip() Signature: %s", sig)
 				}
-				if sigInput := r.Header.Get("Signature-Input"); sigInput == "" {
+				if sigInput := r.Header.Get("Signature-Input"); sigInput != "" {
 					t.Logf("RoundTrip() Signature-Input: %s", sigInput)
 				}
 				w.WriteHeader(http.StatusOK)
@@ -356,6 +356,7 @@ func sameBodyHandler(t *testing.T, bodyBuff, respBuff []byte) http.HandlerFunc {
 		_, _ = w.Write(respBuff)
 	}
 }
+
 func areErrors(a, b any) bool {
 	_, ok1 := a.(error)
 	_, ok2 := b.(error)

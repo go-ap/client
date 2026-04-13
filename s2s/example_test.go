@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/common-fate/httpsig/sigset"
 	vocab "github.com/go-ap/activitypub"
 )
 
@@ -50,22 +51,20 @@ G6aFKaqQfOXKCyWoUiVknQJAXrlgySFci/2ueKlIE1QqIiLSZ8V8OlpFLRnb1pzI
 		}
 		return actor
 	}()
-
-	handlerFn = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Printf("%s\n", r.Header.Get("Signature"))
-		w.WriteHeader(http.StatusOK)
-	})
 )
 
-func ExampleHTTPSignatureTransport_RoundTrip_draft() {
-	srv := httptest.NewServer(handlerFn)
+func ExampleTransport_RoundTrip_draft() {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Printf("%s\n", r.Header.Get("Signature"))
+		w.WriteHeader(http.StatusOK)
+	}))
 	tr := New(WithTransport(http.DefaultTransport), WithActor(actor, prvRSA), NoRFC9421)
 
 	// The below functionality would be equivalent to the following usage:
 	//http.DefaultClient.Transport = tr
 	//res, err := http.Get(srv.URL)
 
-	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+	req := httptest.NewRequest(http.MethodGet, srv.URL, nil)
 	host := strings.TrimPrefix(srv.URL, "http://")
 	host = host[:strings.Index(host, ":")]
 	req.Header.Set("Host", host)
@@ -74,4 +73,30 @@ func ExampleHTTPSignatureTransport_RoundTrip_draft() {
 
 	// Output:
 	// keyId="https://example.com/~johndoe#main",algorithm="hs2019",headers="(request-target) host date",signature="PYSZQkKUmr9ZDxuNCLe69krLB/0bsprA/K4p4+l0xIINcUBfhDBJNPkN64Omm1tdraTsWfh2JBWQeIdEAW6mm72ERCvqyOldszpiS/PkkVVApduI8tmhSDaoy0I/E3VGanZomEwER5E3VLerAu7ENy8lZrbsYUP7T+pZ+IeMBlM="
+}
+
+func sameNonce() (string, error) {
+	return "test", nil
+}
+
+func ExampleTransport_RoundTrip_rfc9421() {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s, _ := sigset.Unmarshal(r)
+		sig := s.Messages["sig1"]
+		fmt.Printf("KeyID: %s\n", sig.Input.KeyID)
+		fmt.Printf("Alg: %s\n", sig.Input.Alg)
+		fmt.Printf("Nonce: %s\n", sig.Input.Nonce)
+		fmt.Printf("CoveredComponents: %v\n", sig.Input.CoveredComponents)
+	}))
+	tr := New(WithTransport(http.DefaultTransport), WithActor(actor, prvRSA), WithNonce(sameNonce))
+	req := httptest.NewRequest(http.MethodPost, srv.URL, nil)
+	req.Header.Set("Date", millenium.Format(http.TimeFormat))
+	_, _ = tr.RoundTrip(req)
+
+	// Output:
+	// KeyID: https://example.com/~johndoe#main
+	// Alg: rsa-v1_5-sha256
+	// Nonce: test
+	// CoveredComponents: [@method @target-uri]
+	//
 }

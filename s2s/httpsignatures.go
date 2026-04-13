@@ -33,7 +33,7 @@ var (
 	signatureExpiration = int64(time.Hour.Seconds())
 )
 
-type HTTPSignatureTransport struct {
+type Transport struct {
 	signer.Transport
 
 	// m is needed for ensuring the signer.Transport CoveredComponents writes and reads
@@ -45,29 +45,35 @@ type HTTPSignatureTransport struct {
 	l lw.Logger
 }
 
-type OptionFn func(transport *HTTPSignatureTransport) error
+type OptionFn func(transport *Transport) error
 
 func WithTransport(tr http.RoundTripper) OptionFn {
-	return func(h *HTTPSignatureTransport) error {
+	return func(h *Transport) error {
 		h.Transport.BaseTransport = tr
 		return nil
 	}
 }
 
-func NoRFC9421(h *HTTPSignatureTransport) error {
+func NoRFC9421(h *Transport) error {
 	h.Transport.Alg = nil
 	return nil
 }
 
 func WithCoveredComponents(s ...string) OptionFn {
-	return func(h *HTTPSignatureTransport) error {
+	return func(h *Transport) error {
 		h.Transport.CoveredComponents = s
+		return nil
+	}
+}
+func WithNonce(nonceFn func() (string, error)) OptionFn {
+	return func(h *Transport) error {
+		h.Transport.GetNonce = nonceFn
 		return nil
 	}
 }
 
 func WithActor(act *vocab.Actor, prv crypto.PrivateKey) OptionFn {
-	return func(h *HTTPSignatureTransport) error {
+	return func(h *Transport) error {
 		h.Actor = act
 		h.Key = prv
 
@@ -109,7 +115,7 @@ func WithActor(act *vocab.Actor, prv crypto.PrivateKey) OptionFn {
 }
 
 func WithLogger(l lw.Logger) OptionFn {
-	return func(h *HTTPSignatureTransport) error {
+	return func(h *Transport) error {
 		h.l = l
 		if l != nil {
 			h.Transport.OnDeriveSigningString = func(ctx context.Context, stringToSign string) {
@@ -121,17 +127,17 @@ func WithLogger(l lw.Logger) OptionFn {
 }
 
 func WithApplicationTag(t string) OptionFn {
-	return func(h *HTTPSignatureTransport) error {
+	return func(h *Transport) error {
 		h.Transport.Tag = t
 		return nil
 	}
 }
 
-// New initializes the HTTPSignatureTransport
+// New initializes the Transport
 // TODO(marius): we need to add to the return values the errors
 //  that might come from the initialization functions.
-func New(initFns ...OptionFn) *HTTPSignatureTransport {
-	h := new(HTTPSignatureTransport)
+func New(initFns ...OptionFn) *Transport {
+	h := new(Transport)
 	h.Transport.CoveredComponents = FetchCoveredComponents
 	h.l = nilLogger
 	for _, fn := range initFns {
@@ -163,28 +169,49 @@ func pemEncodePublicKey(prvKey crypto.PrivateKey) string {
 	return strings.ReplaceAll(string(pem.EncodeToMemory(&p)), "\n", "")
 }
 
-// RoundTrip dispatches the received request after signing it
-func (s *HTTPSignatureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if s.BaseTransport == nil {
-		s.BaseTransport = http.DefaultTransport
+// RoundTrip dispatches the received request after signing it.
+// We currently use the double knocking mechanism Mastodon popularized:
+// * we first attempt to sign the request with RFC9421 compliant signature,
+// * if it failed, we try again using a draft Cavage-12 version signature.
+// Additionally, if everything failed, and we're operating with a fetch request,
+// we make one last, non-signed attempt.
+func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if s.Transport.BaseTransport == nil {
+		s.Transport.BaseTransport = http.DefaultTransport
 	}
+	tr := s.Transport.BaseTransport
 	or := *req
 	isFetchRequest := req.Method == http.MethodGet || req.Method == http.MethodHead
 
-	if req.URL != nil && req.URL.Path == "" {
-		req.URL.Path = "/"
+	if or.URL != nil && or.URL.Path == "" {
+		or.URL.Path = "/"
 	}
+
 	if s.Actor != nil {
-		req = cloneRequest(&or) // per RoundTripper contract
 		if s.Transport.Alg != nil {
-			res, err := s.Transport.RoundTrip(req)
-			if err == nil && res.StatusCode < http.StatusBadRequest {
-				return res, nil
+			// NOTE(marius): we're to sign the request, so we need to drain the request body
+			var buff []byte
+			if or.Body != nil {
+				var err error
+				if buff, err = io.ReadAll(or.Body); err != nil {
+					return nil, err
+				}
 			}
+
+			if res, err := s.Transport.RoundTrip(cloneRequest(&or, buff)); err == nil {
+				if res.StatusCode < http.StatusBadRequest {
+					return res, nil
+				}
+				// NOTE(marius): Not an acceptable response, so we want to try again.
+				// We also need to close the body of discarded response to avoid leaks.
+				_ = res.Body.Close()
+			}
+			// NOTE(marius): we clone another request to provide a readable body.
+			req = cloneRequest(&or, buff)
 		}
 
-		// NOTE(marius): if the RFC9421 signed request has failed (possibly due to the server not supporting it)
-		// we fall back to signing with the draft 6 compatible algorithm.
+		// NOTE(marius): when the RFC9421 signed request has failed (possibly due to the server not supporting it)
+		// we fall back to signing with the Cavage-12 compatible algorithm.
 		lctx := lw.Ctx{"key": pemEncodePublicKey(s.Key), "actor": s.Actor.ID}
 		if err := s.signRequest(req); err != nil && s.l != nil {
 			s.l.WithContext(lctx, lw.Ctx{"err": err.Error()}).Errorf("unable to sign request")
@@ -193,23 +220,19 @@ func (s *HTTPSignatureTransport) RoundTrip(req *http.Request) (*http.Response, e
 		}
 	}
 
-	res1, err := s.BaseTransport.RoundTrip(req)
+	res, err := tr.RoundTrip(req)
 	// NOTE(marius): if the RoundTrip fails to produce a response and this is a fetch request,
-	// we can try again with the original request which doesn't have the Signature header.
-	//
-	// For the other types of requests that have succeeded, we return now.
-	if !isFetchRequest || err == nil {
-		return res1, err
+	// we can try again with the original non-signed request.
+	if err != nil && isFetchRequest {
+		// NOTE(marius): This is a mitigation for loading Public Keys for Actors on other instances,
+		// which can create an infinite loop of requests if that instance tries to do an authorize-fetch
+		// for our signing Actor.
+		// There are more details in ticket: https://todo.sr.ht/~mariusor/go-activitypub/301
+		return tr.RoundTrip(cloneRequest(&or, nil))
 	}
 
-	// NOTE(marius): if we received an actual error we try the request again, but unsigned.
-	//
-	// This is a pretty hacky mitigation for loading Public Keys for Actors on other instances, which
-	// sometimes triggers a feedback loop if the instance tries to authorize the signing actor in its turn.
-	//
-	// I detailed that faulty behaviour in ticket:
-	//  https://todo.sr.ht/~mariusor/go-activitypub/301
-	return s.BaseTransport.RoundTrip(&or)
+	// For the other types of requests that have succeeded, we return now.
+	return res, err
 }
 
 func toCryptoPublicKey(key vocab.PublicKey) (crypto.PublicKey, error) {
@@ -224,7 +247,7 @@ func keyMismatchErr(pk crypto.PrivateKey, pub crypto.PublicKey) error {
 	return errors.Newf("unable to sign request, mismatch between the Actor's public and private key: %T : %T", pub, pk)
 }
 
-func (s *HTTPSignatureTransport) signRequest(req *http.Request) error {
+func (s *Transport) signRequest(req *http.Request) error {
 	if !s.Actor.PublicKey.ID.IsValid() {
 		return errors.Newf("unable to sign request, invalid Actor public key ID")
 	}
@@ -236,7 +259,9 @@ func (s *HTTPSignatureTransport) signRequest(req *http.Request) error {
 	if req.Body != nil {
 		if _, err := io.Copy(&bodyBuf, req.Body); err == nil {
 			req.Body = io.NopCloser(&bodyBuf)
-			headers = append(HeadersToSign, "digest")
+			if bodyBuf.Len() > 0 {
+				headers = append(HeadersToSign, "digest")
+			}
 		}
 	}
 
@@ -261,18 +286,14 @@ func (s *HTTPSignatureTransport) signRequest(req *http.Request) error {
 	return nil
 }
 
-var _ http.RoundTripper = new(HTTPSignatureTransport)
+var _ http.RoundTripper = new(Transport)
 
 // cloneRequest returns a clone of the provided *http.Request.
 // The clone is a shallow copy of the struct and its Header map.
-func cloneRequest(r *http.Request) *http.Request {
-	// shallow copy of the struct
-	r2 := new(http.Request)
-	*r2 = *r
-	// deep copy of the Header
-	r2.Header = make(http.Header, len(r.Header))
-	for k, s := range r.Header {
-		r2.Header[k] = append([]string(nil), s...)
+func cloneRequest(r *http.Request, buff []byte) *http.Request {
+	r2 := r.Clone(r.Context())
+	if buff != nil {
+		r2.Body = io.NopCloser(bytes.NewReader(buff))
 	}
 	return r2
 }
