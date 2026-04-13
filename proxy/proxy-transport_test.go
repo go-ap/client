@@ -1,8 +1,11 @@
 package proxy
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 	"time"
@@ -189,20 +192,37 @@ func TestNew(t *testing.T) {
 }
 
 func TestTransport_RoundTrip(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
 	type fields struct {
 		Base     http.RoundTripper
 		ProxyURL vocab.IRI
 	}
 	tests := []struct {
-		name    string
-		fields  fields
-		req     *http.Request
-		want    *http.Response
-		wantErr error
+		name       string
+		fields     fields
+		req        *http.Request
+		wantStatus int
+		wantBody   []byte
+		wantErr    error
 	}{
 		{
 			name:    "empty",
 			wantErr: fmt.Errorf("nil request"),
+		},
+		{
+			name: "jdoe",
+			fields: fields{
+				Base:     http.DefaultTransport,
+				ProxyURL: vocab.IRI(proxy.URL),
+			},
+			req:        httptest.NewRequest(http.MethodGet, srv.URL+"/~jdoe", nil),
+			wantStatus: http.StatusOK,
+			wantBody:   []byte(`{"id":"http://example.com/~jdoe","type":"Actor"}`),
 		},
 	}
 	for _, tt := range tests {
@@ -213,11 +233,23 @@ func TestTransport_RoundTrip(t *testing.T) {
 			}
 			got, err := tr.RoundTrip(tt.req)
 			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("RoundTrip() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+				t.Fatalf("RoundTrip() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			}
+			if got == nil {
+				if tt.wantStatus != 0 {
+					t.Errorf("RoundTrip() invalid nil response, expected status code %d", tt.wantStatus)
+				}
 				return
 			}
-			if !cmp.Equal(got, tt.want) {
-				t.Errorf("RoundTrip() got = %s", cmp.Diff(tt.want, got, EquateWeakErrors))
+			if got.StatusCode != tt.wantStatus {
+				t.Errorf("RoundTrip() invalid status code %d, expected = %d", got.StatusCode, tt.wantStatus)
+			}
+			body, err := io.ReadAll(got.Body)
+			if err != nil {
+				t.Errorf("RoundTrip() unable to read body, error = %s", err)
+			}
+			if bytes.Equal(body, tt.wantBody) {
+				t.Errorf("RoundTrip() body = %s", cmp.Diff(tt.wantBody, body))
 			}
 		})
 	}
@@ -228,6 +260,10 @@ func Test_buildProxyRequest(t *testing.T) {
 		r        *http.Request
 		proxyUrl *url.URL
 	}
+	req := httptest.NewRequest("GET", "http://example.com", nil)
+	req.Header.Add("Accept", "application/json")
+	req.Header.Add("X-Invented", "666")
+	req.Header.Add("Authorization", "Bearer =invalid=")
 	tests := []struct {
 		name string
 		args args
@@ -235,34 +271,62 @@ func Test_buildProxyRequest(t *testing.T) {
 	}{
 		{
 			name: "empty",
+			args: args{},
+			want: nil,
 		},
 		{
 			name: "no proxy url",
 			args: args{
 				r: &http.Request{
 					Method: http.MethodGet,
-					URL: &url.URL{
-						Scheme: "http",
-						Host:   "example.com",
-						Path:   "/",
-					},
-				},
+					URL:    &url.URL{Scheme: "http", Host: "example.com", Path: "/"}},
 			},
 			want: &http.Request{
 				Method: http.MethodGet,
-				URL: &url.URL{
-					Scheme: "http",
-					Host:   "example.com",
-					Path:   "/",
-				},
+				URL:    &url.URL{Scheme: "http", Host: "example.com", Path: "/"}},
+		},
+		{
+			name: "not empty request",
+			args: args{
+				r: httptest.NewRequest("GET", "http://example.com", nil),
 			},
+			want: httptest.NewRequest("GET", "http://example.com", nil),
+		},
+		{
+			name: "not empty request, with proxy",
+			args: args{
+				r:        httptest.NewRequest("GET", "http://example.com", nil),
+				proxyUrl: &url.URL{Scheme: "http", Host: "example.com", Path: "/proxy"},
+			},
+			want: proxyReq(httptest.NewRequest("GET", "http://example.com", nil), "http://example.com/proxy"),
+		},
+		{
+			name: "request with headers, with proxy",
+			args: args{
+				r:        req,
+				proxyUrl: &url.URL{Scheme: "http", Host: "example.com", Path: "/proxy"},
+			},
+			want: proxyReq(req, "http://example.com/proxy"),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := buildProxyRequest(tt.args.r, tt.args.proxyUrl); !cmp.Equal(got, tt.want, cmp.AllowUnexported(http.Request{}, url.URL{})) {
-				t.Errorf("buildProxyRequest() = %s", cmp.Diff(tt.want, got, cmp.AllowUnexported(http.Request{}, url.URL{})))
+			got := buildProxyRequest(tt.args.r, tt.args.proxyUrl)
+			if !cmp.Equal(got, tt.want, cmpopts.IgnoreUnexported(http.Request{}, bytes.Buffer{})) {
+				t.Errorf("buildProxyRequest() = %s", cmp.Diff(tt.want, got, cmpopts.IgnoreUnexported(http.Request{}, bytes.Buffer{})))
 			}
 		})
 	}
+}
+
+func proxyReq(req *http.Request, proxy string) *http.Request {
+	f := url.Values{}
+	f.Add("id", req.URL.String())
+	body := bytes.NewBuffer([]byte(f.Encode()))
+	r := httptest.NewRequest(http.MethodPost, proxy, body)
+	r.Header = req.Header.Clone()
+	r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	r.ContentLength = int64(body.Len())
+	r.RequestURI = proxy
+	return r
 }

@@ -61,11 +61,13 @@ func setProxyFetchID(req *http.Request, id string) error {
 	body := bytes.Buffer{}
 	form := make(url.Values)
 	form.Add("id", id)
-	_, err := body.WriteString(form.Encode())
+	buff := form.Encode()
+	_, err := body.WriteString(buff)
 	if err != nil {
 		return err
 	}
 	req.Body = io.NopCloser(&body)
+	req.ContentLength = int64(body.Len())
 	return nil
 }
 
@@ -128,6 +130,7 @@ func buildProxyRequest(r *http.Request, proxyUrl *url.URL) *http.Request {
 	r2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	r2.URL = proxyUrl
 	r2.Host = proxyUrl.Host
+	r2.RequestURI = proxyUrl.String()
 	_ = setProxyFetchID(r2, r.URL.String())
 	return r2
 }
