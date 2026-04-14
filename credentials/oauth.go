@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 
 	"git.sr.ht/~mariusor/cache"
@@ -50,12 +51,27 @@ type ClientConfig struct {
 	Expiration   time.Duration
 }
 
-func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, error) {
-	actorIRI := vocab.IRI(actorURL)
-	if u, _ := actorIRI.URL(); u == nil {
-		actorIRI = vocab.IRI(fmt.Sprintf("https://%s", actorURL))
+func normalizeActorIRI(i vocab.IRI) (vocab.IRI, error) {
+	actorIRI := i
+	if len(i) > 4 && !strings.HasPrefix(string(actorIRI), "http") {
+		actorIRI = "https://" + actorIRI
 	}
+	ur, err := actorIRI.URL()
+	if err != nil {
+		return i, errors.Newf("invalid actor URL: %s", err)
+	}
+	if ur.Host == "" {
+		actorIRI = i
+		err = errors.Newf("invalid actor URL")
+	}
+	return actorIRI, err
+}
 
+func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, error) {
+	actorIRI, err := normalizeActorIRI(vocab.IRI(actorURL))
+	if err != nil {
+		return nil, errors.Newf("invalid actor URL: %s", err)
+	}
 	if ctx.Value(oauth2.HTTPClient) == nil {
 		transport := client.UserAgentTransport(auth.UserAgent, cache.Private(http.DefaultTransport, cache.Mem(MByte)))
 		// Set up the default HTTP client for the oauth2 module
@@ -67,11 +83,7 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 
 	app := new(C2S)
 	httpC := OAuth2Client(ctx, app)
-	initFns := []client.OptionFn{
-		client.WithHTTPClient(httpC),
-		client.SkipTLSValidation(true),
-	}
-	get := client.New(initFns...)
+	get := client.New(client.WithHTTPClient(httpC), client.SkipTLSValidation(InsecureTLSConnection))
 
 	actor, err := get.Actor(ctx, actorIRI)
 	if err != nil {
@@ -187,9 +199,12 @@ func (c *C2S) Sign(r *http.Request) error {
 }
 
 func getActorOAuthEndpoint(actor vocab.Actor) oauth2.Endpoint {
-	e := oauth2.Endpoint{
-		AuthURL:  fmt.Sprintf("%s/oauth/authorize", actor.ID),
-		TokenURL: fmt.Sprintf("%s/oauth/token", actor.ID),
+	var e oauth2.Endpoint
+	if actor.ID != "" {
+		e = oauth2.Endpoint{
+			AuthURL:  fmt.Sprintf("%s/oauth/authorize", actor.ID),
+			TokenURL: fmt.Sprintf("%s/oauth/token", actor.ID),
+		}
 	}
 	if actor.Endpoints != nil {
 		if !vocab.IsNil(actor.Endpoints.OauthAuthorizationEndpoint) {
@@ -333,17 +348,18 @@ func handleOAuth2Flow(ctx context.Context, app *oauth2.Config) (*oauth2.Token, e
 			return
 		}
 		_ = r.ParseForm()
-		token := r.Form.Get("code")
+		if token := r.Form.Get("code"); token != "" {
+			callbackCh <- callbackResponse{tok: token}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(successCallbackHTML))
+			return
+		}
+
 		var cbErr error
 		if r.Form.Get("error") != "" {
 			cbErr = fmt.Errorf("%s: %s", r.Form.Get("error"), r.Form.Get("error_description"))
 		} else if r.Form.Get("state") != state {
 			cbErr = fmt.Errorf("state parameter mismatch")
-		} else if token != "" {
-			callbackCh <- callbackResponse{tok: token}
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(successCallbackHTML))
-			return
 		} else {
 			cbErr = fmt.Errorf("token is missing")
 		}

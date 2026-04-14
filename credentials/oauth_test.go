@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-ap/activitypub"
+	vocab "github.com/go-ap/activitypub"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"golang.org/x/oauth2"
@@ -130,8 +130,6 @@ func compareErrors(x, y interface{}) bool {
 var EquateWeakErrors = cmp.FilterValues(areErrors, cmp.Comparer(compareErrors))
 
 func TestC2S_Config(t *testing.T) {
-	type fields struct {
-	}
 	tests := []struct {
 		name string
 		conf oauth2.Config
@@ -214,8 +212,8 @@ func TestC2S_Token(t *testing.T) {
 func TestC2S_ID(t *testing.T) {
 	tests := []struct {
 		name string
-		IRI  activitypub.IRI
-		want activitypub.IRI
+		IRI  vocab.IRI
+		want vocab.IRI
 	}{
 		{
 			name: "empty",
@@ -237,7 +235,7 @@ func TestC2S_ID(t *testing.T) {
 		})
 	}
 	var c *C2S
-	if got := c.ID(); got != activitypub.EmptyIRI {
+	if got := c.ID(); got != vocab.EmptyIRI {
 		t.Errorf("ID() on nil is not an empty IRI")
 	}
 }
@@ -336,10 +334,10 @@ func Test_dumbProgressBar(t *testing.T) {
 
 func TestC2S_Transport(t *testing.T) {
 	type fields struct {
-		IRI      activitypub.IRI
+		IRI      vocab.IRI
 		Conf     oauth2.Config
 		Tok      *oauth2.Token
-		ProxyURL activitypub.IRI
+		ProxyURL vocab.IRI
 	}
 	tests := []struct {
 		name   string
@@ -363,6 +361,91 @@ func TestC2S_Transport(t *testing.T) {
 			}
 			if got := c.Transport(tt.ctx); !cmp.Equal(got, tt.want, cmpopts.IgnoreUnexported(http.Transport{})) {
 				t.Errorf("Transport() = %s", cmp.Diff(tt.want, got, cmpopts.IgnoreUnexported(http.Transport{})))
+			}
+		})
+	}
+}
+
+func Test_normalizeActorURL(t *testing.T) {
+	type args struct {
+	}
+	tests := []struct {
+		name     string
+		actorURL vocab.IRI
+		want     vocab.IRI
+		wantErr  error
+	}{
+		{
+			name:     "empty",
+			actorURL: "",
+			want:     "",
+			wantErr:  errors.New("invalid actor URL: empty IRI"),
+		},
+		{
+			name:     "no proto",
+			actorURL: "example.com",
+			want:     "https://example.com",
+		},
+		{
+			name:     "w/ http proto",
+			actorURL: "http://example.com/test",
+			want:     "http://example.com/test",
+		},
+		{
+			name:     "w/ https proto",
+			actorURL: "https://example.com/~jdoe",
+			want:     "https://example.com/~jdoe",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := normalizeActorIRI(tt.actorURL)
+			if !cmp.Equal(tt.wantErr, err, EquateWeakErrors) {
+				t.Errorf("normalizeActorURL() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+				return
+			}
+			if got != tt.want {
+				t.Errorf("normalizeActorURL() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_getActorOAuthEndpoint(t *testing.T) {
+	tests := []struct {
+		name  string
+		actor vocab.Actor
+		want  oauth2.Endpoint
+	}{
+		{
+			name:  "empty",
+			actor: vocab.Actor{},
+			want:  oauth2.Endpoint{},
+		},
+		{
+			name:  "with ID",
+			actor: vocab.Actor{ID: "http://example.com/~jdoe"},
+			want: oauth2.Endpoint{
+				AuthURL:  "http://example.com/~jdoe/oauth/authorize",
+				TokenURL: "http://example.com/~jdoe/oauth/token",
+			},
+		},
+		{
+			name: "with Endpoints",
+			actor: vocab.Actor{ID: "http://example.com/~jdoe", Endpoints: &vocab.Endpoints{
+				OauthAuthorizationEndpoint: vocab.IRI("http://example.com/~jdoe/authorize"),
+				OauthTokenEndpoint:         vocab.IRI("http://example.com/~jdoe/token"),
+			}},
+			want: oauth2.Endpoint{
+				AuthURL:  "http://example.com/~jdoe/authorize",
+				TokenURL: "http://example.com/~jdoe/token",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := getActorOAuthEndpoint(tt.actor); !cmp.Equal(got, tt.want) {
+				t.Errorf("getActorOAuthEndpoint() = %v, want %v", got, tt.want)
 			}
 		})
 	}
