@@ -518,7 +518,7 @@ func ctxLogFn(t *testing.T) CtxLogFn {
 	}
 }
 
-func TestC_collection(t *testing.T) {
+func TestC_Collection(t *testing.T) {
 	tests := []struct {
 		name    string
 		path    string
@@ -604,13 +604,13 @@ func TestC_collection(t *testing.T) {
 				iri = vocab.IRI(srv.URL).AddPath(tt.path)
 			}
 
-			got, err := c.collection(ctx, iri)
+			got, err := c.Collection(ctx, iri)
 			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("collection() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+				t.Errorf("Collection() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
-				t.Errorf("collection() got = %s", cmp.Diff(tt.want, got, EquateItems))
+				t.Errorf("Collection() got = %s", cmp.Diff(tt.want, got, EquateItems))
 			}
 		})
 	}

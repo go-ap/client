@@ -104,7 +104,7 @@ func (c C) Collection(ctx context.Context, iri vocab.IRI, ff ...filters.Check) (
 
 // Actor dereferences the iri [vocab.IRI] as an actor object.
 func (c C) Actor(ctx context.Context, iri vocab.IRI) (*vocab.Actor, error) {
-	it, err := c.object(ctx, iri)
+	it, err := c.loadCtx(ctx, iri)
 	if err != nil {
 		return nil, errors.Annotatef(err, "Unable to load Actor: %s", iri)
 	}
@@ -118,7 +118,7 @@ func (c C) Actor(ctx context.Context, iri vocab.IRI) (*vocab.Actor, error) {
 
 // Activity dereferences the iri [vocab.IRI] as an activity object.
 func (c C) Activity(ctx context.Context, iri vocab.IRI) (*vocab.Activity, error) {
-	it, err := c.object(ctx, iri)
+	it, err := c.loadCtx(ctx, iri)
 	if err != nil {
 		return nil, errors.Annotatef(err, "Unable to load Activity: %s", iri)
 	}
@@ -132,7 +132,7 @@ func (c C) Activity(ctx context.Context, iri vocab.IRI) (*vocab.Activity, error)
 
 // Object dereferences the iri [vocab.IRI] as an object.
 func (c C) Object(ctx context.Context, iri vocab.IRI) (*vocab.Object, error) {
-	it, err := c.object(ctx, iri)
+	it, err := c.loadCtx(ctx, iri)
 	if err != nil {
 		return nil, errors.Annotatef(err, "Unable to load IRI: %s", iri)
 	}
@@ -230,10 +230,6 @@ func (c C) collection(ctx context.Context, i vocab.IRI) (vocab.CollectionInterfa
 		return nil, errors.Annotatef(err, "unable to convert item type %q to any of the collection types", typ)
 	}
 	return col, nil
-}
-
-func (c C) object(ctx context.Context, i vocab.IRI) (vocab.Item, error) {
-	return c.CtxLoadIRI(ctx, i)
 }
 
 func irif(i vocab.IRI, f ...filters.Check) vocab.IRI {
