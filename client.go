@@ -24,7 +24,7 @@ type Ctx = lw.Ctx
 
 type RequestSignFn func(*http.Request) error
 type CtxLogFn func(...Ctx) LogFn
-type LogFn func(string, ...interface{})
+type LogFn func(string, ...any)
 
 type Basic interface {
 	LoadIRI(vocab.IRI) (vocab.Item, error)
@@ -169,10 +169,10 @@ func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 	errCtx := Ctx{"IRI": id}
 	st := time.Now()
 	if len(id) == 0 {
-		return nil, errf("Invalid IRI, nil value").iri(id)
+		return nil, errf("invalid nil IRI")
 	}
 	if _, err := id.URL(); err != nil {
-		return nil, errf("Trying to load an invalid IRI").iri(id).annotate(err)
+		return nil, errf("trying to load an invalid IRI").iri(id).annotate(err)
 	}
 	var err error
 	var obj vocab.Item
@@ -183,7 +183,7 @@ func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 		return obj, err
 	}
 	if resp == nil {
-		err := errf("Unable to load from the AP end point: nil response").iri(id)
+		err := errf("unable to load from the ActivityPub end point: nil response").iri(id)
 		c.errFn(errCtx, Ctx{"duration": time.Now().Sub(st)})("Error: %s", err)
 		return obj, err
 	}
@@ -192,7 +192,7 @@ func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusGone {
-		err := errf("Unable to load from the AP end point: invalid status %d", resp.StatusCode).iri(id)
+		err := errf("unable to load from the ActivityPub end point") //.status(resp.StatusCode).iri(id)
 		c.errFn(errCtx, Ctx{"duration": time.Now().Sub(st)}, Ctx{"status": resp.Status, "headers": resp.Header, "proto": resp.Proto})("Error: %s", err)
 		return obj, err
 	}
@@ -222,10 +222,10 @@ func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 			return it, errors.Gonef("gone")
 		}
 
-		return it, errors.NewGone(e[0], "unable to load IRI: %q", id)
+		return it, errors.NewGone(e[0], "unable to load IRI: '%s'", id)
 	}
 
-	return nil, errors.NotImplementedf("invalid response from ActivityPub server, not a document and not an error: %s", id)
+	return nil, errf("invalid response from ActivityPub server").annotate(errors.NotImplementedf("not a document and not an error")).iri(id)
 }
 
 // CtxLoadIRI tries to dereference an IRI and load the full ActivityPub object it represents

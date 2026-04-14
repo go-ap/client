@@ -8,30 +8,40 @@ import (
 	vocab "github.com/go-ap/activitypub"
 )
 
-type err struct {
+type cerr struct {
 	err error
 	msg string
 	i   vocab.IRI
+	st  int
 }
 
-func (e err) annotate(err error) err {
+func (e cerr) annotate(err error) cerr {
 	e.err = err
 	return e
 }
 
-func (e err) iri(i vocab.IRI) err {
+func (e cerr) iri(i vocab.IRI) cerr {
 	e.i = i
 	return e
 }
 
-func errf(msg string, p ...interface{}) err {
-	return err{
+func (e cerr) status(st int) cerr {
+	e.st = st
+	return e
+}
+
+func errf(msg string, p ...interface{}) cerr {
+	return cerr{
 		msg: fmt.Sprintf(msg, p...),
 	}
 }
 
+func annotate(err error) cerr {
+	return cerr{err: err}
+}
+
 // Error returns the formatted error
-func (e err) Error() string {
+func (e cerr) Error() string {
 	s := strings.Builder{}
 	s.WriteString(e.msg)
 	if e.i != "" {
@@ -45,11 +55,11 @@ func (e err) Error() string {
 	return s.String()
 }
 
-func (e err) Unwrap() error {
+func (e cerr) Unwrap() error {
 	return e.err
 }
 
-func (e err) Format(s fmt.State, verb rune) {
+func (e cerr) Format(s fmt.State, verb rune) {
 	switch verb {
 	case 's', 'v':
 		_, _ = io.WriteString(s, e.msg)

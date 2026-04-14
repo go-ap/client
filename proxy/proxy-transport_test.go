@@ -81,26 +81,6 @@ func compareErrors(x, y any) bool {
 
 var EquateWeakErrors = cmp.FilterValues(areErrors, cmp.Comparer(compareErrors))
 
-func areItems(a, b any) bool {
-	_, ok1 := a.(vocab.Item)
-	_, ok2 := b.(vocab.Item)
-	return ok1 && ok2
-}
-
-func compareItems(x, y any) bool {
-	var i1 vocab.Item
-	var i2 vocab.Item
-	if ic1, ok := x.(vocab.Item); ok {
-		i1 = ic1
-	}
-	if ic2, ok := y.(vocab.Item); ok {
-		i2 = ic2
-	}
-	return vocab.ItemsEqual(i1, i2) || vocab.ItemsEqual(i2, i1)
-}
-
-var EquateItems = cmp.FilterValues(areItems, cmp.Comparer(compareItems))
-
 func TestWithProxyURL(t *testing.T) {
 	tests := []struct {
 		name     string

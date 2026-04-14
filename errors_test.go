@@ -8,7 +8,7 @@ import (
 )
 
 func TestErr_Error(t *testing.T) {
-	e := err{
+	e := cerr{
 		msg: "test",
 		i:   vocab.IRI(""),
 	}

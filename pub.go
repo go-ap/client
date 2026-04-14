@@ -183,7 +183,7 @@ func validateIRIForRequest(i vocab.IRI) error {
 		return err
 	}
 	if u.Host == "" {
-		return errors.Newf("Host is empty")
+		return errors.Newf("IRI host is empty")
 	}
 	return nil
 }
@@ -198,30 +198,36 @@ func rawFilterQuery(f ...filters.Check) string {
 func (c C) collection(ctx context.Context, i vocab.IRI) (vocab.CollectionInterface, error) {
 	it, err := c.CtxLoadIRI(ctx, i)
 	if err != nil {
-		return nil, errors.Annotatef(err, "Unable to load IRI: %q", i)
+		return nil, errors.Annotatef(err, "unable to load")
 	}
 	if vocab.IsNil(it) {
-		return nil, errors.Newf("Unable to load IRI, nil item: %q", i)
+		return nil, errors.Newf("unable to load IRI, nil item: %s", i)
 	}
 	var col vocab.CollectionInterface
 
 	typ := it.GetType()
 	if !vocab.CollectionTypes.Match(it.GetType()) {
-		return nil, errors.Errorf("Response item type is not a valid collection: %q", typ)
+		return nil, errors.Errorf("response item type is not a valid collection: %q", typ)
 	}
-	var ok bool
+
 	switch {
+	case vocab.CollectionOfItems.Match(typ):
+		col, err = vocab.ToItemCollection(it)
+	case vocab.CollectionOfIRIs.Match(typ):
+		// NOTE(marius): this probably is not needed, as the Unmarshaling of an array results in an ItemCollection,
+		// even if its elements are all IRIs.
+		col, err = vocab.ToIRIs(it)
 	case vocab.CollectionType.Match(typ):
-		col, ok = it.(*vocab.Collection)
+		col, err = vocab.ToCollection(it)
 	case vocab.CollectionPageType.Match(typ):
-		col, ok = it.(*vocab.CollectionPage)
+		col, err = vocab.ToCollectionPage(it)
 	case vocab.OrderedCollectionType.Match(typ):
-		col, ok = it.(*vocab.OrderedCollection)
+		col, err = vocab.ToOrderedCollection(it)
 	case vocab.OrderedCollectionPageType.Match(typ):
-		col, ok = it.(*vocab.OrderedCollectionPage)
+		col, err = vocab.ToOrderedCollectionPage(it)
 	}
-	if !ok {
-		return nil, errors.Errorf("Unable to convert item type %q to any of the collection types", typ)
+	if err != nil {
+		return nil, errors.Annotatef(err, "unable to convert item type %q to any of the collection types", typ)
 	}
 	return col, nil
 }
@@ -268,20 +274,20 @@ func replies(o vocab.Item, f ...filters.Check) vocab.IRI {
 
 func validateActor(a vocab.Item) error {
 	if vocab.IsNil(a) {
-		return errors.Errorf("Actor is nil")
+		return errors.Errorf("item is nil")
 	}
 	if a.IsObject() && !vocab.ActorTypes.Match(a.GetType()) {
-		return errors.Errorf("Invalid Actor type %s", a.GetType())
+		return errors.Errorf("invalid Actor type %v", a.GetType())
 	}
 	return nil
 }
 
-func validateObject(o vocab.Item) error {
-	if vocab.IsNil(o) {
-		return errors.Errorf("object is nil")
+func validateObject(it vocab.Item) error {
+	if vocab.IsNil(it) {
+		return errors.Errorf("item is nil")
 	}
-	if o.IsObject() && !vocab.ObjectTypes.Match(o.GetType()) {
-		return errors.Errorf("invalid Object type %q", o.GetType())
+	if it.IsObject() && !vocab.ObjectTypes.Match(it.GetType()) {
+		return errors.Errorf("invalid Object type %v", it.GetType())
 	}
 	return nil
 }
