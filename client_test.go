@@ -1,16 +1,24 @@
 package client
 
 import (
+	"crypto/tls"
+	"net"
 	"net/http"
 	"reflect"
 	"testing"
+	"time"
+	"unsafe"
 
 	"git.sr.ht/~mariusor/cache"
+	"git.sr.ht/~mariusor/lw"
+	"github.com/common-fate/httpsig/signer"
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/client/debug"
 	"github.com/go-ap/client/s2s"
 	"github.com/go-ap/errors"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"golang.org/x/oauth2"
 )
 
 func TestClient_LoadIRI(t *testing.T) {
@@ -67,15 +75,85 @@ func Test_getTransportWithTLSValidation(t *testing.T) {
 			args: args{},
 			want: defaultTransport,
 		},
+		{
+			name: "cache, skip false",
+			args: args{rt: &cache.Transport{Base: defaultTransport}, skip: false},
+			want: &cache.Transport{Base: defaultTransport},
+		},
+		{
+			name: "cache, skip true",
+			args: args{rt: &cache.Transport{Base: defaultTransport}, skip: true},
+			// NOTE(marius): this is defaultTransport with InsecureSkipVerify set to true
+			want: &cache.Transport{Base: uaTransport{
+				Base: &http.Transport{
+					Proxy:               http.ProxyFromEnvironment,
+					MaxIdleConns:        100,
+					IdleConnTimeout:     90 * time.Second,
+					MaxIdleConnsPerHost: 20,
+					DialContext:         (&net.Dialer{Timeout: longTimeout}).DialContext,
+					TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
+					TLSHandshakeTimeout: longTimeout,
+				},
+				ua: UserAgent,
+			}},
+		},
+		{
+			name: "empty oauth2, skip false",
+			args: args{rt: &oauth2.Transport{}, skip: false},
+			want: &oauth2.Transport{Base: defaultTransport},
+		},
+		{
+			name: "empty oauth2, skip true",
+			args: args{rt: &oauth2.Transport{}, skip: true},
+			// NOTE(marius): this is defaultTransport with InsecureSkipVerify set to true
+			want: &oauth2.Transport{Base: uaTransport{
+				Base: &http.Transport{
+					Proxy:               http.ProxyFromEnvironment,
+					MaxIdleConns:        100,
+					IdleConnTimeout:     90 * time.Second,
+					MaxIdleConnsPerHost: 20,
+					DialContext:         (&net.Dialer{Timeout: longTimeout}).DialContext,
+					TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
+					TLSHandshakeTimeout: longTimeout,
+				},
+				ua: UserAgent,
+			}},
+		},
+		{
+			name: "empty s2s, skip false",
+			args: args{rt: &s2s.Transport{}, skip: false},
+			want: &s2s.Transport{Transport: signer.Transport{BaseTransport: defaultTransport}},
+		},
+		{
+			name: "empty s2s, skip true",
+			args: args{rt: &s2s.Transport{}, skip: true,
+			},
+			// NOTE(marius): this is defaultTransport with InsecureSkipVerify set to true
+			want: &s2s.Transport{Transport: signer.Transport{BaseTransport: uaTransport{
+				Base: &http.Transport{
+					Proxy:               http.ProxyFromEnvironment,
+					MaxIdleConns:        100,
+					IdleConnTimeout:     90 * time.Second,
+					MaxIdleConnsPerHost: 20,
+					DialContext:         (&net.Dialer{Timeout: longTimeout}).DialContext,
+					TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
+					TLSHandshakeTimeout: longTimeout,
+				},
+				ua: UserAgent,
+			}}},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := getTransportWithTLSValidation(tt.args.rt, tt.args.skip); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("getTransportWithTLSValidation() = %v, want %v", got, tt.want)
+			got := getTransportWithTLSValidation(tt.args.rt, tt.args.skip)
+			if !cmp.Equal(got, tt.want, ignoredTransports, equateFuncs) {
+				t.Errorf("getTransportWithTLSValidation() = %s", cmp.Diff(tt.want, got, ignoredTransports, equateFuncs))
 			}
 		})
 	}
 }
+
+var ignoredTransports = cmpopts.IgnoreUnexported(http.Transport{}, tls.Config{}, uaTransport{}, cache.Transport{}, s2s.Transport{})
 
 func TestSkipTLSValidation(t *testing.T) {
 	tests := []struct {
@@ -180,3 +258,90 @@ func compareErrors(x, y any) bool {
 }
 
 var EquateWeakErrors = cmp.FilterValues(areErrors, cmp.Comparer(compareErrors))
+
+func areFuncs(a, b any) bool {
+	ta := reflect.TypeOf(a)
+	tb := reflect.TypeOf(b)
+	return ta != nil && ta.Kind() == reflect.Func && tb != nil && tb.Kind() == reflect.Func
+}
+
+func compareFuncs(x, y any) bool {
+	px := *(*unsafe.Pointer)(unsafe.Pointer(&x))
+	py := *(*unsafe.Pointer)(unsafe.Pointer(&y))
+	return px == py
+}
+
+var equateFuncs = cmp.FilterValues(areFuncs, cmp.Comparer(compareFuncs))
+
+func TestWithLogger(t *testing.T) {
+	tests := []struct {
+		name    string
+		l       lw.Logger
+		wantErr error
+	}{
+		{
+			name:    "empty",
+			l:       nil,
+			wantErr: nil,
+		},
+		{
+			name:    "nil logger",
+			l:       lw.Nil(),
+			wantErr: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cl := new(C)
+			optionFn := WithLogger(tt.l)
+			err := optionFn(cl)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("WithLogger() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			}
+			if !cmp.Equal(cl.l, tt.l) {
+				t.Errorf("WithLogger() = %s", cmp.Diff(tt.l, cl.l))
+			}
+
+			if tt.l != nil {
+				if cl.infoFn == nil {
+					t.Errorf("WithLogger() C.infoFn should not be nil, when logger is present")
+				}
+				if cl.errFn == nil {
+					t.Errorf("WithLogger() C.errFn should not be nil, when logger is present")
+				}
+			}
+		})
+	}
+}
+
+func TestWithHTTPClient(t *testing.T) {
+	tests := []struct {
+		name    string
+		h       *http.Client
+		wantErr error
+	}{
+		{
+			name:    "empty",
+			h:       nil,
+			wantErr: nil,
+		},
+		{
+			name:    "default client",
+			h:       defaultClient,
+			wantErr: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cl := new(C)
+			optionFn := WithHTTPClient(tt.h)
+			err := optionFn(cl)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("WithHTTPClient() = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			}
+			if !cmp.Equal(cl.c, tt.h, ignoredTransports, equateFuncs) {
+				t.Errorf("WithHTTPClient() = %s", cmp.Diff(tt.h, cl.c, ignoredTransports, equateFuncs))
+			}
+		})
+	}
+}

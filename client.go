@@ -64,19 +64,6 @@ type C struct {
 	errFn  CtxLogFn
 }
 
-// SetDefaultHTTPClient is a hacky solution to modify the default static instance of the http.DefaultClient
-// to whatever we have instantiated currently.
-// This ensures that options like SkipTLSValidation propagate to the requests that are not done explicitly by us,
-// because we assume it will be executed under the same constraints.
-func SetDefaultHTTPClient() OptionFn {
-	return func(c *C) error {
-		if cl, ok := c.c.(*http.Client); ok {
-			http.DefaultClient = cl
-		}
-		return nil
-	}
-}
-
 // WithHTTPClient sets the http client
 func WithHTTPClient(h *http.Client) OptionFn {
 	return func(c *C) error {
@@ -116,7 +103,7 @@ func getTransportWithTLSValidation(rt http.RoundTripper, skip bool) http.RoundTr
 		tr.Transport.BaseTransport = getTransportWithTLSValidation(tr.BaseTransport, skip)
 	case *oauth2.Transport:
 		tr.Base = getTransportWithTLSValidation(tr.Base, skip)
-	case cache.Transport:
+	case *cache.Transport:
 		tr.Base = getTransportWithTLSValidation(tr.Base, skip)
 	case uaTransport:
 		tr.Base = getTransportWithTLSValidation(tr.Base, skip)
