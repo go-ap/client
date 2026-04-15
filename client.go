@@ -100,7 +100,7 @@ func getTransportWithTLSValidation(rt http.RoundTripper, skip bool) http.RoundTr
 	case *debug.Transport:
 		tr.Base = getTransportWithTLSValidation(tr.Base, skip)
 	case *s2s.Transport:
-		tr.Transport.BaseTransport = getTransportWithTLSValidation(tr.BaseTransport, skip)
+		tr.Base = getTransportWithTLSValidation(tr.Base, skip)
 	case *oauth2.Transport:
 		tr.Base = getTransportWithTLSValidation(tr.Base, skip)
 	case *cache.Transport:

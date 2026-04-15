@@ -82,11 +82,13 @@ func sameNonce() (string, error) {
 func ExampleTransport_RoundTrip_rfc9421() {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s, _ := sigset.Unmarshal(r)
-		sig := s.Messages["sig1"]
-		fmt.Printf("KeyID: %s\n", sig.Input.KeyID)
-		fmt.Printf("Alg: %s\n", sig.Input.Alg)
-		fmt.Printf("Nonce: %s\n", sig.Input.Nonce)
-		fmt.Printf("CoveredComponents: %v\n", sig.Input.CoveredComponents)
+		if sig, ok := s.Messages["sig1"]; ok {
+			fmt.Printf("KeyID: %s\n", sig.Input.KeyID)
+			fmt.Printf("Alg: %s\n", sig.Input.Alg)
+			fmt.Printf("Nonce: %s\n", sig.Input.Nonce)
+			fmt.Printf("CoveredComponents: %v\n", sig.Input.CoveredComponents)
+		}
+		w.WriteHeader(http.StatusOK)
 	}))
 	tr := New(WithTransport(http.DefaultTransport), WithActor(actor, prvRSA), WithNonce(sameNonce))
 	req := httptest.NewRequest(http.MethodPost, srv.URL, nil)

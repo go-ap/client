@@ -2,25 +2,30 @@ package s2s
 
 import (
 	"bytes"
-	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"git.sr.ht/~mariusor/lw"
 	e "github.com/common-fate/httpsig/alg_ecdsa"
 	ed "github.com/common-fate/httpsig/alg_ed25519"
 	r "github.com/common-fate/httpsig/alg_rsa"
+	"github.com/common-fate/httpsig/sigbase"
+	"github.com/common-fate/httpsig/signature"
 	"github.com/common-fate/httpsig/signer"
+	"github.com/common-fate/httpsig/sigparams"
+	"github.com/common-fate/httpsig/sigset"
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/errors"
 	"github.com/go-fed/httpsig"
@@ -34,11 +39,17 @@ var (
 )
 
 type Transport struct {
-	signer.Transport
+	Base http.RoundTripper
 
-	// m is needed for ensuring the signer.Transport CoveredComponents writes and reads
-	// don't cause a race condition.
-	m     sync.RWMutex
+	// Tag is an application-specific tag for the signature as a String value.
+	// This value is used by applications to help identify signatures relevant for specific applications or protocols.
+	// See: https://www.rfc-editor.org/rfc/rfc9421.html#section-2.3-4.12
+	Tag string
+
+	CoveredComponents []string
+	nonceFn           func() (string, error)
+	skipRFCSignatures bool
+
 	Key   crypto.PrivateKey
 	Actor *vocab.Actor
 
@@ -49,25 +60,26 @@ type OptionFn func(transport *Transport) error
 
 func WithTransport(tr http.RoundTripper) OptionFn {
 	return func(h *Transport) error {
-		h.Transport.BaseTransport = tr
+		h.Base = tr
 		return nil
 	}
 }
 
 func NoRFC9421(h *Transport) error {
-	h.Transport.Alg = nil
+	h.skipRFCSignatures = true
 	return nil
 }
 
 func WithCoveredComponents(s ...string) OptionFn {
 	return func(h *Transport) error {
-		h.Transport.CoveredComponents = s
+		h.CoveredComponents = s
 		return nil
 	}
 }
+
 func WithNonce(nonceFn func() (string, error)) OptionFn {
 	return func(h *Transport) error {
-		h.Transport.GetNonce = nonceFn
+		h.nonceFn = nonceFn
 		return nil
 	}
 }
@@ -77,39 +89,6 @@ func WithActor(act *vocab.Actor, prv crypto.PrivateKey) OptionFn {
 		h.Actor = act
 		h.Key = prv
 
-		if act == nil {
-			return nil
-		}
-
-		actorPubKey, err := toCryptoPublicKey(act.PublicKey)
-		if err != nil {
-			return errors.Annotatef(err, "unable to sign request, Actor public key type %T is invalid", actorPubKey)
-		}
-
-		h.Transport.KeyID = string(act.PublicKey.ID)
-		if prv == nil {
-			return nil
-		}
-		switch pk := prv.(type) {
-		case *rsa.PrivateKey:
-			pub, _ := pk.Public().(*rsa.PublicKey)
-			if !pub.Equal(actorPubKey) {
-				return keyMismatchErr(pk, actorPubKey)
-			}
-			h.Transport.Alg = r.NewRSAPKCS256Signer(pk)
-		case *ecdsa.PrivateKey:
-			pub, _ := pk.Public().(*ecdsa.PublicKey)
-			if !pub.Equal(actorPubKey) {
-				return keyMismatchErr(pk, actorPubKey)
-			}
-			h.Transport.Alg = e.NewP384Signer(pk)
-		case ed25519.PrivateKey:
-			pub, _ := pk.Public().(ed25519.PublicKey)
-			if !pub.Equal(actorPubKey) {
-				return keyMismatchErr(pk, actorPubKey)
-			}
-			h.Transport.Alg = &ed.Ed25519{PrivateKey: pk, PublicKey: pub}
-		}
 		return nil
 	}
 }
@@ -117,18 +96,13 @@ func WithActor(act *vocab.Actor, prv crypto.PrivateKey) OptionFn {
 func WithLogger(l lw.Logger) OptionFn {
 	return func(h *Transport) error {
 		h.l = l
-		if l != nil {
-			h.Transport.OnDeriveSigningString = func(ctx context.Context, stringToSign string) {
-				l.Debugf("String to sign: %s", stringToSign)
-			}
-		}
 		return nil
 	}
 }
 
 func WithApplicationTag(t string) OptionFn {
 	return func(h *Transport) error {
-		h.Transport.Tag = t
+		h.Tag = t
 		return nil
 	}
 }
@@ -138,7 +112,8 @@ func WithApplicationTag(t string) OptionFn {
 //  that might come from the initialization functions.
 func New(initFns ...OptionFn) *Transport {
 	h := new(Transport)
-	h.Transport.CoveredComponents = FetchCoveredComponents
+	h.CoveredComponents = FetchCoveredComponents
+	h.nonceFn = randomNonce
 	h.l = nilLogger
 	for _, fn := range initFns {
 		if err := fn(h); err != nil {
@@ -169,6 +144,105 @@ func pemEncodePublicKey(prvKey crypto.PrivateKey) string {
 	return strings.ReplaceAll(string(pem.EncodeToMemory(&p)), "\n", "")
 }
 
+var getCurrentTime = func() time.Time {
+	return time.Now().Truncate(time.Millisecond).UTC()
+}
+
+func randomNonce() (string, error) {
+	nonceBytes := make([]byte, 32)
+	_, err := rand.Read(nonceBytes)
+	if err != nil {
+		return "", fmt.Errorf("could not generate nonce: %w", err)
+	}
+	return base64.URLEncoding.EncodeToString(nonceBytes), nil
+}
+
+func (s *Transport) signRequestRFC(or *http.Request) error {
+	if s.Actor == nil {
+		return errors.Newf("unable to sign request, Actor is invalid")
+	}
+	if s.Key == nil {
+		return errors.Newf("unable to sign request, private key is invalid")
+	}
+
+	act := s.Actor
+	prv := s.Key
+	actorPubKey, err := toCryptoPublicKey(act.PublicKey)
+	if err != nil {
+		return errors.Annotatef(err, "unable to sign request, Actor public key type %T is invalid", actorPubKey)
+	}
+	keyID := string(act.PublicKey.ID)
+
+	var alg signer.Algorithm
+	switch pk := prv.(type) {
+	case *rsa.PrivateKey:
+		pub, _ := pk.Public().(*rsa.PublicKey)
+		if !pub.Equal(actorPubKey) {
+			return keyMismatchErr(pk, actorPubKey)
+		}
+		alg = r.NewRSAPKCS256Signer(pk)
+	case *ecdsa.PrivateKey:
+		pub, _ := pk.Public().(*ecdsa.PublicKey)
+		if !pub.Equal(actorPubKey) {
+			return keyMismatchErr(pk, actorPubKey)
+		}
+		alg = e.NewP384Signer(pk)
+	case ed25519.PrivateKey:
+		pub, _ := pk.Public().(ed25519.PublicKey)
+		if !pub.Equal(actorPubKey) {
+			return keyMismatchErr(pk, actorPubKey)
+		}
+		alg = &ed.Ed25519{PrivateKey: pk, PublicKey: pub}
+	}
+	// parse the existing signature set on the request
+	set, err := sigset.Unmarshal(or)
+	if err != nil {
+		return err
+	}
+
+	// derive the signature.
+	nonce, err := s.nonceFn()
+	if err != nil {
+		return fmt.Errorf("generating nonce: %w", err)
+	}
+
+	params := sigparams.Params{
+		KeyID:             keyID,
+		Tag:               s.Tag,
+		Alg:               alg.Type(),
+		Created:           getCurrentTime(),
+		CoveredComponents: s.CoveredComponents,
+		Nonce:             nonce,
+	}
+
+	// derive the signature base following the process in https://www.rfc-editor.org/rfc/rfc9421.html#create-sig-input
+	base, err := sigbase.Derive(params, nil, or, alg.ContentDigest())
+	if err != nil {
+		return fmt.Errorf("deriving signature base: %w", err)
+	}
+
+	stringToSign, err := base.CanonicalString(params)
+	if err != nil {
+		return fmt.Errorf("creating string to sign: %w", err)
+	}
+	// sign the signature base according to the signing algorithm
+	sig, err := alg.Sign(or.Context(), stringToSign)
+	if err != nil {
+		return fmt.Errorf("error signing request: %w", err)
+	}
+
+	// construct the HTTP message signature
+	ms := signature.Message{Input: params, Signature: sig}
+
+	// add the signature to the set
+	set.Add(&ms)
+
+	// include the signature in the cloned HTTP request.
+	return set.Include(or)
+}
+
+var ErrRetry = errors.Newf("retry")
+
 // RoundTrip dispatches the received request after signing it.
 // We currently use the double knocking mechanism Mastodon popularized:
 // * we first attempt to sign the request with RFC9421 compliant signature,
@@ -176,10 +250,45 @@ func pemEncodePublicKey(prvKey crypto.PrivateKey) string {
 // Additionally, if everything failed, and we're operating with a fetch request,
 // we make one last, non-signed attempt.
 func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if s.Transport.BaseTransport == nil {
-		s.Transport.BaseTransport = http.DefaultTransport
+	tr := s.Base
+	if tr == nil {
+		tr = http.DefaultTransport
 	}
-	tr := s.Transport.BaseTransport
+
+	errs := make([]error, 0, 3)
+	roundTripFn := func(req *http.Request, signFn func(*http.Request) error) (*http.Response, error) {
+		if signFn != nil {
+			lctx := lw.Ctx{"key": pemEncodePublicKey(s.Key)}
+			if s.Actor != nil {
+				lctx["actor"] = s.Actor.ID
+			}
+			err := signFn(req)
+			if err != nil {
+				if s.l != nil {
+					s.l.WithContext(lctx, lw.Ctx{"err": err.Error()}).Errorf("unable to sign request")
+				}
+				errs = append(errs, err)
+				return nil, ErrRetry
+			}
+		}
+
+		res, err := tr.RoundTrip(req)
+		if err != nil {
+			return nil, err
+		}
+
+		switch res.StatusCode {
+		case http.StatusUnauthorized, http.StatusForbidden:
+			// NOTE(marius): Not an acceptable response status, so we want to try again.
+			// We also need to close the body of discarded response to avoid leaks.
+			_ = res.Body.Close()
+			return nil, ErrRetry
+		default:
+			// NOTE(marius): some kind of success
+			return res, nil
+		}
+	}
+
 	or := *req
 	isFetchRequest := req.Method == http.MethodGet || req.Method == http.MethodHead
 
@@ -187,52 +296,51 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		or.URL.Path = "/"
 	}
 
-	if s.Actor != nil {
-		if s.Transport.Alg != nil {
-			// NOTE(marius): we're to sign the request, so we need to drain the request body
-			var buff []byte
-			if or.Body != nil {
-				var err error
-				if buff, err = io.ReadAll(or.Body); err != nil {
-					return nil, err
-				}
+	var res *http.Response
+	var err error
+	if s.Actor != nil && s.Key != nil {
+		// NOTE(marius): we're to sign the request, so we need to copy the body
+		var buff []byte
+		if or.Body != nil {
+			if buff, err = io.ReadAll(or.Body); err != nil {
+				return nil, err
 			}
-
-			if res, err := s.Transport.RoundTrip(cloneRequest(&or, buff)); err == nil {
-				if res.StatusCode < http.StatusBadRequest {
-					return res, nil
-				}
-				// NOTE(marius): Not an acceptable response, so we want to try again.
-				// We also need to close the body of discarded response to avoid leaks.
+		}
+		if !s.skipRFCSignatures {
+			// NOTE(marius): try #1: use RFC9421 signature
+			res, err = roundTripFn(cloneRequest(&or, buff), s.signRequestRFC)
+			if err == nil || !errors.Is(err, ErrRetry) {
+				return res, err
+			}
+			if res != nil && res.Body != nil {
 				_ = res.Body.Close()
 			}
-			// NOTE(marius): we clone another request to provide a readable body.
-			req = cloneRequest(&or, buff)
 		}
 
-		// NOTE(marius): when the RFC9421 signed request has failed (possibly due to the server not supporting it)
-		// we fall back to signing with the Cavage-12 compatible algorithm.
-		lctx := lw.Ctx{"key": pemEncodePublicKey(s.Key), "actor": s.Actor.ID}
-		if err := s.signRequest(req); err != nil && s.l != nil {
-			s.l.WithContext(lctx, lw.Ctx{"err": err.Error()}).Errorf("unable to sign request")
-		} else {
-			s.l.WithContext(lctx).Debugf("signed request")
+		// NOTE(marius): try #2: use cavage-12 draft signature
+		res, err = roundTripFn(cloneRequest(&or, buff), s.signRequestCavage)
+		if err == nil || !errors.Is(err, ErrRetry) {
+			return res, err
+		}
+		if err != nil && errors.Is(err, ErrRetry) && !isFetchRequest {
+			slices.Reverse(errs)
+			err = errs[0]
+			return res, err
+		}
+		if res != nil && res.Body != nil {
+			_ = res.Body.Close()
 		}
 	}
 
-	res, err := tr.RoundTrip(req)
-	// NOTE(marius): if the RoundTrip fails to produce a response and this is a fetch request,
-	// we can try again with the original non-signed request.
-	if err != nil && isFetchRequest {
+	if isFetchRequest {
 		// NOTE(marius): This is a mitigation for loading Public Keys for Actors on other instances,
 		// which can create an infinite loop of requests if that instance tries to do an authorize-fetch
 		// for our signing Actor.
 		// There are more details in ticket: https://todo.sr.ht/~mariusor/go-activitypub/301
-		return tr.RoundTrip(cloneRequest(&or, nil))
+		return roundTripFn(&or, nil)
 	}
 
-	// For the other types of requests that have succeeded, we return now.
-	return res, err
+	return res, errors.Join(errs...)
 }
 
 func toCryptoPublicKey(key vocab.PublicKey) (crypto.PublicKey, error) {
@@ -247,7 +355,13 @@ func keyMismatchErr(pk crypto.PrivateKey, pub crypto.PublicKey) error {
 	return errors.Newf("unable to sign request, mismatch between the Actor's public and private key: %T : %T", pub, pk)
 }
 
-func (s *Transport) signRequest(req *http.Request) error {
+func (s *Transport) signRequestCavage(req *http.Request) error {
+	if s.Actor == nil {
+		return errors.Newf("unable to sign request, Actor is invalid")
+	}
+	if s.Key == nil {
+		return errors.Newf("unable to sign request, private key is invalid")
+	}
 	if !s.Actor.PublicKey.ID.IsValid() {
 		return errors.Newf("unable to sign request, invalid Actor public key ID")
 	}
@@ -280,10 +394,7 @@ func (s *Transport) signRequest(req *http.Request) error {
 	if err != nil {
 		return err
 	}
-	if err = sig.SignRequest(s.Key, string(keyID), req, bodyBuf.Bytes()); err != nil {
-		return err
-	}
-	return nil
+	return sig.SignRequest(s.Key, string(keyID), req, bodyBuf.Bytes())
 }
 
 var _ http.RoundTripper = new(Transport)

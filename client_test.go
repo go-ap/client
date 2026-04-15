@@ -11,7 +11,6 @@ import (
 
 	"git.sr.ht/~mariusor/cache"
 	"git.sr.ht/~mariusor/lw"
-	"github.com/common-fate/httpsig/signer"
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/client/debug"
 	"github.com/go-ap/client/s2s"
@@ -122,14 +121,14 @@ func Test_getTransportWithTLSValidation(t *testing.T) {
 		{
 			name: "empty s2s, skip false",
 			args: args{rt: &s2s.Transport{}, skip: false},
-			want: &s2s.Transport{Transport: signer.Transport{BaseTransport: defaultTransport}},
+			want: &s2s.Transport{Base: defaultTransport},
 		},
 		{
 			name: "empty s2s, skip true",
 			args: args{rt: &s2s.Transport{}, skip: true,
 			},
 			// NOTE(marius): this is defaultTransport with InsecureSkipVerify set to true
-			want: &s2s.Transport{Transport: signer.Transport{BaseTransport: uaTransport{
+			want: &s2s.Transport{Base: uaTransport{
 				Base: &http.Transport{
 					Proxy:               http.ProxyFromEnvironment,
 					MaxIdleConns:        100,
@@ -140,7 +139,7 @@ func Test_getTransportWithTLSValidation(t *testing.T) {
 					TLSHandshakeTimeout: longTimeout,
 				},
 				ua: UserAgent,
-			}}},
+			}},
 		},
 	}
 	for _, tt := range tests {
