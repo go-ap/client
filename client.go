@@ -29,8 +29,8 @@ type LogFn func(string, ...any)
 type Basic interface {
 	LoadIRI(vocab.IRI) (vocab.Item, error)
 	CtxLoadIRI(context.Context, vocab.IRI) (vocab.Item, error)
-	ToCollection(vocab.IRI, vocab.Item) (vocab.IRI, vocab.Item, error)
-	CtxToCollection(context.Context, vocab.IRI, vocab.Item) (vocab.IRI, vocab.Item, error)
+	ToCollection(vocab.Item, ...vocab.IRI) (vocab.IRI, vocab.Item, error)
+	CtxToCollection(context.Context, vocab.Item, ...vocab.IRI) (vocab.IRI, vocab.Item, error)
 }
 
 // UserAgent value that the client uses when performing requests
@@ -324,7 +324,38 @@ func (c C) Delete(url, contentType string, body io.Reader) (*http.Response, erro
 	return c.do(context.Background(), url, http.MethodDelete, contentType, body)
 }
 
-func (c C) toCollection(ctx context.Context, colIRI vocab.IRI, a vocab.Item) (vocab.IRI, vocab.Item, error) {
+func (c C) toCollections(ctx context.Context, act vocab.Item, colIRI ...vocab.IRI) (vocab.IRI, vocab.Item, error) {
+	result := make(vocab.ItemCollection, 0, len(colIRI))
+	actIRIs := make(vocab.IRIs, 0, len(colIRI))
+
+	for _, iri := range colIRI {
+		actIRI, it, err := c.toCollection(ctx, act, iri)
+		if err != nil {
+			return "", result, err
+		}
+		result = append(result, it)
+		actIRIs = append(actIRIs, actIRI)
+	}
+
+	var it vocab.Item
+	var iri vocab.IRI
+
+	// NOTE(marius): currently I don't know how to return multiple IRIs if we have multiple actors,
+	// so we currently do the wrong thing for len(iris) > 1 and return only the IRI of the first activity.
+	if len(actIRIs) >= 1 {
+		iri = actIRIs[0]
+	}
+	// NOTE(marius): we return the created object if there was only one actor, otherwise a collection of them.
+	if len(result) == 1 {
+		it = result[0]
+	} else if len(result) > 1 {
+		it = result
+	}
+
+	return iri, it, nil
+}
+
+func (c C) toCollection(ctx context.Context, a vocab.Item, colIRI vocab.IRI) (vocab.IRI, vocab.Item, error) {
 	if len(colIRI) == 0 {
 		return "", nil, errf("invalid URL to post to").iri(colIRI)
 	}
@@ -367,13 +398,13 @@ func (c C) toCollection(ctx context.Context, colIRI vocab.IRI, a vocab.Item) (vo
 }
 
 // ToCollection
-func (c C) ToCollection(url vocab.IRI, a vocab.Item) (vocab.IRI, vocab.Item, error) {
-	return c.toCollection(context.Background(), url, a)
+func (c C) ToCollection(a vocab.Item, url ...vocab.IRI) (vocab.IRI, vocab.Item, error) {
+	return c.toCollections(context.Background(), a, url...)
 }
 
 // CtxToCollection
-func (c C) CtxToCollection(ctx context.Context, url vocab.IRI, a vocab.Item) (vocab.IRI, vocab.Item, error) {
-	return c.toCollection(ctx, url, a)
+func (c C) CtxToCollection(ctx context.Context, a vocab.Item, url ...vocab.IRI) (vocab.IRI, vocab.Item, error) {
+	return c.toCollections(ctx, a, url...)
 }
 
 func HTTPClient(c C) *http.Client {

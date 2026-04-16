@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"slices"
 
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/errors"
@@ -106,7 +107,7 @@ func (c C) Collection(ctx context.Context, iri vocab.IRI, ff ...filters.Check) (
 func (c C) Actor(ctx context.Context, iri vocab.IRI) (*vocab.Actor, error) {
 	it, err := c.loadCtx(ctx, iri)
 	if err != nil {
-		return nil, errors.Annotatef(err, "Unable to load Actor: %s", iri)
+		return nil, errors.Annotatef(err, "unable to load actor")
 	}
 	var actor *vocab.Actor
 	err = vocab.OnActor(it, func(p *vocab.Actor) error {
@@ -120,7 +121,7 @@ func (c C) Actor(ctx context.Context, iri vocab.IRI) (*vocab.Actor, error) {
 func (c C) Activity(ctx context.Context, iri vocab.IRI) (*vocab.Activity, error) {
 	it, err := c.loadCtx(ctx, iri)
 	if err != nil {
-		return nil, errors.Annotatef(err, "Unable to load Activity: %s", iri)
+		return nil, errors.Annotatef(err, "unable to load activity")
 	}
 	var activity *vocab.Activity
 	err = vocab.OnActivity(it, func(a *vocab.Activity) error {
@@ -134,7 +135,7 @@ func (c C) Activity(ctx context.Context, iri vocab.IRI) (*vocab.Activity, error)
 func (c C) Object(ctx context.Context, iri vocab.IRI) (*vocab.Object, error) {
 	it, err := c.loadCtx(ctx, iri)
 	if err != nil {
-		return nil, errors.Annotatef(err, "Unable to load IRI: %s", iri)
+		return nil, errors.Annotatef(err, "unable to load object")
 	}
 	var object *vocab.Object
 	err = vocab.OnObject(it, func(o *vocab.Object) error {
@@ -144,37 +145,55 @@ func (c C) Object(ctx context.Context, iri vocab.IRI) (*vocab.Object, error) {
 	return object, err
 }
 
-func (c C) ToOutbox(ctx context.Context, a vocab.Item) (vocab.IRI, vocab.Item, error) {
-	var iri vocab.IRI
-	_ = vocab.OnIntransitiveActivity(a, func(a *vocab.IntransitiveActivity) error {
-		// TODO(marius): this needs updating to work with an Actor that is an IRIs or ItemCollection
-		iri = outbox(a.Actor)
-		if !vocab.IsIRI(a.Actor) {
+type iriGenFn func(vocab.Item, ...filters.Check) vocab.IRI
+
+func ActivityActorTargetCollections(act vocab.Item, colFn iriGenFn) (vocab.IRIs, error) {
+	if colFn == nil {
+		return nil, errors.Newf("invalid collection IRI function")
+	}
+	var targetIRIs vocab.IRIs
+	err := vocab.OnIntransitiveActivity(act, func(a *vocab.IntransitiveActivity) error {
+		err := vocab.OnItem(a.Actor, func(act vocab.Item) error {
+			// NOTE(marius): apply the colFn function to the actor to generate the target collection IRI.
+			targetIRIs = append(targetIRIs, colFn(act))
+			return nil
+		})
+		// NOTE(marius): normalize the target collection IRIs.
+		switch {
+		case vocab.IsItemCollection(a.Actor):
+			if actors, err := vocab.ToItemCollection(a.Actor); err == nil {
+				a.Actor = actors.IRIs()
+			}
+		case !vocab.IsIRI(a.Actor):
 			a.Actor = a.Actor.GetLink()
 		}
-		return nil
+		return err
 	})
-	if err := validateIRIForRequest(iri); err != nil {
-		return "", nil, errors.Annotatef(err, "Invalid Outbox IRI")
+	if err != nil {
+		return nil, errors.Annotatef(err, "object of type %T is not an activity", act)
 	}
-	return c.CtxToCollection(ctx, iri, a)
+	inValidIRIFn := func(iri vocab.IRI) bool {
+		return validateIRIForRequest(iri) != nil
+	}
+	return slices.DeleteFunc(targetIRIs, inValidIRIFn), nil
 }
 
-func (c C) ToInbox(ctx context.Context, a vocab.Item) (vocab.IRI, vocab.Item, error) {
-	var iri vocab.IRI
-	_ = vocab.OnIntransitiveActivity(a, func(a *vocab.IntransitiveActivity) error {
-		// TODO(marius): this needs updating to work with an Actor that is an IRIs or ItemCollection
-		iri = inbox(a.Actor)
-		if !vocab.IsIRI(a.Actor) {
-			a.Actor = a.Actor.GetLink()
-		}
-		return nil
-	})
-
-	if err := validateIRIForRequest(iri); err != nil {
-		return "", nil, errors.Annotatef(err, "Invalid Inbox IRI")
+// ToOutbox dispatches an Activity to its Actor's Outbox.
+// It is the simplest mechanism to dispatch an ActivityPub Social API activity.
+func (c C) ToOutbox(ctx context.Context, act vocab.Item) (vocab.IRI, vocab.Item, error) {
+	outboxes, err := ActivityActorTargetCollections(act, outbox)
+	if err != nil {
+		return "", nil, err
 	}
-	return c.CtxToCollection(ctx, iri, a)
+	return c.CtxToCollection(ctx, act, outboxes...)
+}
+
+func (c C) ToInbox(ctx context.Context, act vocab.Item) (vocab.IRI, vocab.Item, error) {
+	outboxes, err := ActivityActorTargetCollections(act, inbox)
+	if err != nil {
+		return "", nil, err
+	}
+	return c.CtxToCollection(ctx, act, outboxes...)
 }
 
 func validateIRIForRequest(i vocab.IRI) error {

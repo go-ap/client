@@ -344,3 +344,33 @@ func TestWithHTTPClient(t *testing.T) {
 		})
 	}
 }
+
+func TestHTTPClient(t *testing.T) {
+	tests := []struct {
+		name   string
+		client C
+		want   *http.Client
+	}{
+		{
+			name: "empty",
+			want: nil,
+		},
+		{
+			name:   "with http.Client",
+			client: C{c: &http.Client{Timeout: 666 * time.Second}},
+			want:   &http.Client{Timeout: 666 * time.Second},
+		},
+		{
+			name:   "with C client",
+			client: C{c: &C{c: &http.Client{Timeout: 66 * time.Second}}},
+			want:   &http.Client{Timeout: 66 * time.Second},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := HTTPClient(tt.client); !cmp.Equal(got, tt.want, ignoredTransports, equateFuncs) {
+				t.Errorf("HTTPClient() = %s", cmp.Diff(tt.want, got, ignoredTransports, equateFuncs))
+			}
+		})
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"git.sr.ht/~mariusor/lw"
@@ -576,7 +577,7 @@ func TestC_Collection(t *testing.T) {
 			name: "iris",
 			path: "/inbox",
 			col:  vocab.IRIs{vocab.IRI("http://example.com"), vocab.IRI("http://example.com/1")},
-			want: &vocab.IRIs{vocab.IRI("http://example.com"), vocab.IRI("http://example.com/1")},
+			want: &vocab.ItemCollection{vocab.IRI("http://example.com"), vocab.IRI("http://example.com/1")},
 		},
 	}
 	for _, tt := range tests {
@@ -635,3 +636,1005 @@ func compareItems(x, y any) bool {
 }
 
 var EquateItems = cmp.FilterValues(areItems, cmp.Comparer(compareItems))
+
+func TestC_Inbox(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    string
+		actor   vocab.Item
+		want    vocab.CollectionInterface
+		wantErr error
+	}{
+		{
+			name:    "empty",
+			wantErr: errors.Newf("item is nil"),
+		},
+		{
+			name:    "not empty",
+			path:    "/invalid",
+			want:    nil,
+			wantErr: errors.Annotatef(errf("unable to load from the ActivityPub end point"), "unable to load"),
+		},
+		{
+			name:  "ordered collection",
+			path:  "/",
+			actor: mockActor("http://example.com/", "jdoe"),
+			want:  mockCollection("jdoe", vocab.Inbox),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := C{
+				c:      defaultClient,
+				l:      lw.Dev(lw.SetOutput(t.Output())),
+				infoFn: ctxLogFn(t),
+				errFn:  ctxLogFn(t),
+			}
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/inbox" {
+					errors.NotFound.ServeHTTP(w, r)
+					return
+				}
+				raw, _ := vocab.MarshalJSON(tt.want)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(raw)
+			}))
+
+			ctx := context.Background()
+			var iri vocab.IRI
+			if tt.path != "" {
+				iri = vocab.IRI(srv.URL).AddPath(tt.path)
+			}
+
+			got, err := c.Inbox(ctx, iri)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("Inbox() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+				return
+			}
+			if !cmp.Equal(got, tt.want, EquateItems) {
+				t.Errorf("Inbox() got = %s", cmp.Diff(tt.want, got, EquateItems))
+			}
+		})
+	}
+}
+
+func mockActor(id vocab.IRI, name string) *vocab.Actor {
+	id = id.AddPath("~" + name)
+	return &vocab.Actor{
+		ID:                id,
+		PreferredUsername: vocab.DefaultNaturalLanguage(name),
+		Type:              vocab.PersonType,
+		Outbox:            vocab.Outbox.IRI(id),
+		Inbox:             vocab.Inbox.IRI(id),
+		Followers:         vocab.Followers.IRI(id),
+		Following:         vocab.Following.IRI(id),
+		Shares:            vocab.Shares.IRI(id),
+		Liked:             vocab.Liked.IRI(id),
+		Likes:             vocab.Likes.IRI(id),
+		Replies:           vocab.Replies.IRI(id),
+	}
+}
+
+func mockCollection(name string, c vocab.CollectionPath) vocab.CollectionInterface {
+	actor := vocab.IRI("http://example.com/").AddPath("~" + name)
+	var items vocab.ItemCollection
+	activities := vocab.ItemCollection{
+		&vocab.Activity{
+			ID:    "http://example.com/1",
+			Type:  vocab.CreateType,
+			Actor: actor,
+			Object: &vocab.Object{
+				ID:      "http://example.com/note-1",
+				Type:    vocab.NoteType,
+				Content: vocab.DefaultNaturalLanguage("Answer #1"),
+			},
+		},
+		&vocab.Question{
+			ID:      "http://example.com/2",
+			Type:    vocab.QuestionType,
+			Content: vocab.DefaultNaturalLanguage("question ?"),
+			OneOf: vocab.ItemCollection{
+				vocab.IRI("http://example.com/note-1"),
+				&vocab.Object{
+					Type:    vocab.NoteType,
+					Content: vocab.DefaultNaturalLanguage("Answer #2"),
+				},
+			},
+		},
+	}
+	actors := vocab.ItemCollection{
+		&vocab.Actor{ID: "http://example.com/~alice"},
+		&vocab.Actor{ID: "http://example.com/~jane"},
+	}
+	objects := vocab.ItemCollection{
+		&vocab.Object{
+			Type:    vocab.NoteType,
+			Content: vocab.DefaultNaturalLanguage("Answer #2"),
+		},
+		&vocab.Object{
+			ID:      "http://example.com/note-1",
+			Type:    vocab.NoteType,
+			Content: vocab.DefaultNaturalLanguage("Answer #1"),
+		},
+	}
+
+	switch c {
+	case vocab.Inbox, vocab.Outbox, vocab.Shares, vocab.Likes:
+		items = activities
+	case vocab.Followers, vocab.Following:
+		items = actors
+	case vocab.Liked, vocab.Replies:
+		items = objects
+	}
+	return &vocab.OrderedCollection{
+		ID:           c.IRI(actor),
+		Type:         vocab.OrderedCollectionType,
+		TotalItems:   uint(len(items)),
+		AttributedTo: actor,
+		OrderedItems: items,
+	}
+}
+
+func TestC_Outbox(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    string
+		actor   vocab.Item
+		want    vocab.CollectionInterface
+		wantErr error
+	}{
+		{
+			name:    "empty",
+			wantErr: errors.Newf("item is nil"),
+		},
+		{
+			name:    "not empty",
+			path:    "/invalid",
+			want:    nil,
+			wantErr: errors.Annotatef(errf("unable to load from the ActivityPub end point"), "unable to load"),
+		},
+		{
+			name:  "ordered collection",
+			path:  "/",
+			actor: mockActor("http://example.com/", "jdoe"),
+			want:  mockCollection("jdoe", vocab.Outbox),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := C{
+				c:      defaultClient,
+				l:      lw.Dev(lw.SetOutput(t.Output())),
+				infoFn: ctxLogFn(t),
+				errFn:  ctxLogFn(t),
+			}
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/outbox" {
+					errors.NotFound.ServeHTTP(w, r)
+					return
+				}
+				raw, _ := vocab.MarshalJSON(tt.want)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(raw)
+			}))
+
+			ctx := context.Background()
+			var iri vocab.IRI
+			if tt.path != "" {
+				iri = vocab.IRI(srv.URL).AddPath(tt.path)
+			}
+
+			got, err := c.Outbox(ctx, iri)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("Outbox() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+				return
+			}
+			if !cmp.Equal(got, tt.want, EquateItems) {
+				t.Errorf("Outbox() got = %s", cmp.Diff(tt.want, got, EquateItems))
+			}
+		})
+	}
+}
+
+func TestC_Followers(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    string
+		actor   vocab.Item
+		want    vocab.CollectionInterface
+		wantErr error
+	}{
+		{
+			name:    "empty",
+			wantErr: errors.Newf("item is nil"),
+		},
+		{
+			name:    "not empty",
+			path:    "/invalid",
+			want:    nil,
+			wantErr: errors.Annotatef(errf("unable to load from the ActivityPub end point"), "unable to load"),
+		},
+		{
+			name:  "ordered collection",
+			path:  "/",
+			actor: mockActor("http://example.com/", "jdoe"),
+			want:  mockCollection("jdoe", vocab.Followers),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := C{
+				c:      defaultClient,
+				l:      lw.Dev(lw.SetOutput(t.Output())),
+				infoFn: ctxLogFn(t),
+				errFn:  ctxLogFn(t),
+			}
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/followers" {
+					errors.NotFound.ServeHTTP(w, r)
+					return
+				}
+				raw, _ := vocab.MarshalJSON(tt.want)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(raw)
+			}))
+
+			ctx := context.Background()
+			var iri vocab.IRI
+			if tt.path != "" {
+				iri = vocab.IRI(srv.URL).AddPath(tt.path)
+			}
+
+			got, err := c.Followers(ctx, iri)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("Followers() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+				return
+			}
+			if !cmp.Equal(got, tt.want, EquateItems) {
+				t.Errorf("Followers() got = %s", cmp.Diff(tt.want, got, EquateItems))
+			}
+		})
+	}
+}
+
+func TestC_Following(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    string
+		actor   vocab.Item
+		want    vocab.CollectionInterface
+		wantErr error
+	}{
+		{
+			name:    "empty",
+			wantErr: errors.Newf("item is nil"),
+		},
+		{
+			name:    "not empty",
+			path:    "/invalid",
+			want:    nil,
+			wantErr: errors.Annotatef(errf("unable to load from the ActivityPub end point"), "unable to load"),
+		},
+		{
+			name:  "ordered collection",
+			path:  "/",
+			actor: mockActor("http://example.com/", "jdoe"),
+			want:  mockCollection("jdoe", vocab.Following),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := C{
+				c:      defaultClient,
+				l:      lw.Dev(lw.SetOutput(t.Output())),
+				infoFn: ctxLogFn(t),
+				errFn:  ctxLogFn(t),
+			}
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/following" {
+					errors.NotFound.ServeHTTP(w, r)
+					return
+				}
+				raw, _ := vocab.MarshalJSON(tt.want)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(raw)
+			}))
+
+			ctx := context.Background()
+			var iri vocab.IRI
+			if tt.path != "" {
+				iri = vocab.IRI(srv.URL).AddPath(tt.path)
+			}
+
+			got, err := c.Following(ctx, iri)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("Following() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+				return
+			}
+			if !cmp.Equal(got, tt.want, EquateItems) {
+				t.Errorf("Following() got = %s", cmp.Diff(tt.want, got, EquateItems))
+			}
+		})
+	}
+}
+
+func TestC_Liked(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    string
+		actor   vocab.Item
+		want    vocab.CollectionInterface
+		wantErr error
+	}{
+		{
+			name:    "empty",
+			wantErr: errors.Newf("item is nil"),
+		},
+		{
+			name:    "not empty",
+			path:    "/invalid",
+			want:    nil,
+			wantErr: errors.Annotatef(errf("unable to load from the ActivityPub end point"), "unable to load"),
+		},
+		{
+			name:  "ordered collection",
+			path:  "/",
+			actor: mockActor("http://example.com/", "jdoe"),
+			want:  mockCollection("jdoe", vocab.Liked),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := C{
+				c:      defaultClient,
+				l:      lw.Dev(lw.SetOutput(t.Output())),
+				infoFn: ctxLogFn(t),
+				errFn:  ctxLogFn(t),
+			}
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/liked" {
+					errors.NotFound.ServeHTTP(w, r)
+					return
+				}
+				raw, _ := vocab.MarshalJSON(tt.want)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(raw)
+			}))
+
+			ctx := context.Background()
+			var iri vocab.IRI
+			if tt.path != "" {
+				iri = vocab.IRI(srv.URL).AddPath(tt.path)
+			}
+
+			got, err := c.Liked(ctx, iri)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("Liked() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+				return
+			}
+			if !cmp.Equal(got, tt.want, EquateItems) {
+				t.Errorf("Liked() got = %s", cmp.Diff(tt.want, got, EquateItems))
+			}
+		})
+	}
+}
+
+func TestC_Likes(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    string
+		actor   vocab.Item
+		want    vocab.CollectionInterface
+		wantErr error
+	}{
+		{
+			name:    "empty",
+			wantErr: errors.Newf("item is nil"),
+		},
+		{
+			name:    "not empty",
+			path:    "/invalid",
+			want:    nil,
+			wantErr: errors.Annotatef(errf("unable to load from the ActivityPub end point"), "unable to load"),
+		},
+		{
+			name:  "ordered collection",
+			path:  "/",
+			actor: mockActor("http://example.com/", "jdoe"),
+			want:  mockCollection("jdoe", vocab.Likes),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := C{
+				c:      defaultClient,
+				l:      lw.Dev(lw.SetOutput(t.Output())),
+				infoFn: ctxLogFn(t),
+				errFn:  ctxLogFn(t),
+			}
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/likes" {
+					errors.NotFound.ServeHTTP(w, r)
+					return
+				}
+				raw, _ := vocab.MarshalJSON(tt.want)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(raw)
+			}))
+
+			ctx := context.Background()
+			var iri vocab.IRI
+			if tt.path != "" {
+				iri = vocab.IRI(srv.URL).AddPath(tt.path)
+			}
+
+			got, err := c.Likes(ctx, iri)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("Likes() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+				return
+			}
+			if !cmp.Equal(got, tt.want, EquateItems) {
+				t.Errorf("Likes() got = %s", cmp.Diff(tt.want, got, EquateItems))
+			}
+		})
+	}
+}
+
+func TestC_Shares(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    string
+		actor   vocab.Item
+		want    vocab.CollectionInterface
+		wantErr error
+	}{
+		{
+			name:    "empty",
+			wantErr: errors.Newf("item is nil"),
+		},
+		{
+			name:    "not empty",
+			path:    "/invalid",
+			want:    nil,
+			wantErr: errors.Annotatef(errf("unable to load from the ActivityPub end point"), "unable to load"),
+		},
+		{
+			name:  "ordered collection",
+			path:  "/",
+			actor: mockActor("http://example.com/", "jdoe"),
+			want:  mockCollection("jdoe", vocab.Shares),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := C{
+				c:      defaultClient,
+				l:      lw.Dev(lw.SetOutput(t.Output())),
+				infoFn: ctxLogFn(t),
+				errFn:  ctxLogFn(t),
+			}
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/shares" {
+					errors.NotFound.ServeHTTP(w, r)
+					return
+				}
+				raw, _ := vocab.MarshalJSON(tt.want)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(raw)
+			}))
+
+			ctx := context.Background()
+			var iri vocab.IRI
+			if tt.path != "" {
+				iri = vocab.IRI(srv.URL).AddPath(tt.path)
+			}
+
+			got, err := c.Shares(ctx, iri)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("Shares() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+				return
+			}
+			if !cmp.Equal(got, tt.want, EquateItems) {
+				t.Errorf("Shares() got = %s", cmp.Diff(tt.want, got, EquateItems))
+			}
+		})
+	}
+}
+
+func TestC_Replies(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    string
+		actor   vocab.Item
+		want    vocab.CollectionInterface
+		wantErr error
+	}{
+		{
+			name:    "empty",
+			wantErr: errors.Newf("item is nil"),
+		},
+		{
+			name:    "not empty",
+			path:    "/invalid",
+			want:    nil,
+			wantErr: errors.Annotatef(errf("unable to load from the ActivityPub end point"), "unable to load"),
+		},
+		{
+			name:  "ordered collection",
+			path:  "/",
+			actor: mockActor("http://example.com/", "jdoe"),
+			want:  mockCollection("jdoe", vocab.Replies),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := C{
+				c:      defaultClient,
+				l:      lw.Dev(lw.SetOutput(t.Output())),
+				infoFn: ctxLogFn(t),
+				errFn:  ctxLogFn(t),
+			}
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/replies" {
+					errors.NotFound.ServeHTTP(w, r)
+					return
+				}
+				raw, _ := vocab.MarshalJSON(tt.want)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(raw)
+			}))
+
+			ctx := context.Background()
+			var iri vocab.IRI
+			if tt.path != "" {
+				iri = vocab.IRI(srv.URL).AddPath(tt.path)
+			}
+
+			got, err := c.Replies(ctx, iri)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("Replies() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+				return
+			}
+			if !cmp.Equal(got, tt.want, EquateItems) {
+				t.Errorf("Replies() got = %s", cmp.Diff(tt.want, got, EquateItems))
+			}
+		})
+	}
+}
+
+func TestC_Actor(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    string
+		act     vocab.Actor
+		want    *vocab.Actor
+		wantErr error
+	}{
+		{
+			name:    "empty",
+			wantErr: errors.Newf("unable to load actor: invalid nil IRI"),
+		},
+		{
+			name:    "not empty",
+			path:    "/invalid",
+			want:    nil,
+			wantErr: errors.Annotatef(errf("unable to load from the ActivityPub end point"), "unable to load actor"),
+		},
+		{
+			name: "jdoe",
+			path: "/~jdoe",
+			act:  *mockActor("http://example.com/", "jdoe"),
+			want: mockActor("http://example.com/", "jdoe"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := C{
+				c:      defaultClient,
+				l:      lw.Dev(lw.SetOutput(t.Output())),
+				infoFn: ctxLogFn(t),
+				errFn:  ctxLogFn(t),
+			}
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/~jdoe" {
+					errors.NotFound.ServeHTTP(w, r)
+					return
+				}
+				raw, err := vocab.MarshalJSON(tt.act)
+				if err != nil {
+					t.Errorf("Unable to marshal item: %s", err)
+				}
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(raw)
+			}))
+
+			ctx := context.Background()
+			var iri vocab.IRI
+			if tt.path != "" {
+				iri = vocab.IRI(srv.URL).AddPath(tt.path)
+			}
+
+			got, err := c.Actor(ctx, iri)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("Actor() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+				return
+			}
+			if !cmp.Equal(got, tt.want, EquateItems) {
+				t.Errorf("Actor() got = %s", cmp.Diff(tt.want, got, EquateItems))
+			}
+		})
+	}
+}
+
+func TestC_Object(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    string
+		act     vocab.Object
+		want    *vocab.Object
+		wantErr error
+	}{
+		{
+			name:    "empty",
+			wantErr: errors.Newf("unable to load object: invalid nil IRI"),
+		},
+		{
+			name:    "not empty",
+			path:    "/invalid",
+			want:    nil,
+			wantErr: errors.Annotatef(errf("unable to load from the ActivityPub end point"), "unable to load object"),
+		},
+		{
+			name: "jdoe",
+			path: "/~jdoe",
+			act:  *mockObject(),
+			want: mockObject(),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := C{
+				c:      defaultClient,
+				l:      lw.Dev(lw.SetOutput(t.Output())),
+				infoFn: ctxLogFn(t),
+				errFn:  ctxLogFn(t),
+			}
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/~jdoe" {
+					errors.NotFound.ServeHTTP(w, r)
+					return
+				}
+				raw, err := vocab.MarshalJSON(tt.act)
+				if err != nil {
+					t.Errorf("Unable to marshal item: %s", err)
+				}
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(raw)
+			}))
+
+			ctx := context.Background()
+			var iri vocab.IRI
+			if tt.path != "" {
+				iri = vocab.IRI(srv.URL).AddPath(tt.path)
+			}
+
+			got, err := c.Object(ctx, iri)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("Object() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+				return
+			}
+			if !cmp.Equal(got, tt.want, EquateItems) {
+				t.Errorf("Object() got = %s", cmp.Diff(tt.want, got, EquateItems))
+			}
+		})
+	}
+}
+func mockObject() *vocab.Object {
+	id := vocab.IRI("http://example.com/").AddPath("1")
+	return &vocab.Object{
+		ID:      id,
+		Type:    vocab.NoteType,
+		Shares:  vocab.Shares.IRI(id),
+		Likes:   vocab.Likes.IRI(id),
+		Replies: vocab.Replies.IRI(id),
+	}
+}
+
+func TestC_Activity(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    string
+		act     vocab.Activity
+		want    *vocab.Activity
+		wantErr error
+	}{
+		{
+			name:    "empty",
+			wantErr: errors.Newf("unable to load activity: invalid nil IRI"),
+		},
+		{
+			name:    "not empty",
+			path:    "/invalid",
+			want:    nil,
+			wantErr: errors.Annotatef(errf("unable to load from the ActivityPub end point"), "unable to load activity"),
+		},
+		{
+			name: "jdoe",
+			path: "/~jdoe",
+			act:  *mockActivity(),
+			want: mockActivity(),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := C{
+				c:      defaultClient,
+				l:      lw.Dev(lw.SetOutput(t.Output())),
+				infoFn: ctxLogFn(t),
+				errFn:  ctxLogFn(t),
+			}
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/~jdoe" {
+					errors.NotFound.ServeHTTP(w, r)
+					return
+				}
+				raw, err := vocab.MarshalJSON(tt.act)
+				if err != nil {
+					t.Errorf("Unable to marshal item: %s", err)
+				}
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(raw)
+			}))
+
+			ctx := context.Background()
+			var iri vocab.IRI
+			if tt.path != "" {
+				iri = vocab.IRI(srv.URL).AddPath(tt.path)
+			}
+
+			got, err := c.Activity(ctx, iri)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("Activity() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+				return
+			}
+			if !cmp.Equal(got, tt.want, EquateItems) {
+				t.Errorf("Activity() got = %s", cmp.Diff(tt.want, got, EquateItems))
+			}
+		})
+	}
+}
+func FirstOr(it ...vocab.Item) vocab.Item {
+	if len(it) == 0 {
+		return nil
+	}
+	if len(it) == 1 {
+		return vocab.ItemCollection(it).First()
+	}
+	return vocab.ItemCollection(it)
+}
+
+func mockActivity(a ...vocab.Item) *vocab.Activity {
+	id := vocab.IRI("http://example.com/").AddPath("666")
+	act := &vocab.Activity{
+		ID:   id,
+		Type: vocab.FollowType,
+	}
+	act.Actor = FirstOr(a...)
+	return act
+}
+
+func TestC_ToOutbox(t *testing.T) {
+	tests := []struct {
+		name     string
+		toSend   vocab.Item
+		wantIRI  vocab.IRI
+		wantItem vocab.Item
+		wantErr  error
+	}{
+		{
+			name: "empty",
+		},
+		{
+			name:    "invalid activity type",
+			toSend:  &vocab.Actor{},
+			wantErr: errors.Annotatef(errors.Newf("unable to convert %T to %T", new(vocab.Actor), new(vocab.IntransitiveActivity)), "object of type %T is not an activity", new(vocab.Actor)),
+		},
+		{
+			name:     "withValidActivity",
+			toSend:   mockActivity(),
+			wantIRI:  "",
+			wantItem: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := C{
+				c:      defaultClient,
+				l:      lw.Dev(lw.SetOutput(t.Output())),
+				infoFn: ctxLogFn(t),
+				errFn:  ctxLogFn(t),
+			}
+			ctx := context.Background()
+
+			name := "jdoe"
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != filepath.Join("/~"+name, "outbox") {
+					errors.NotFound.ServeHTTP(w, r)
+					return
+				}
+				raw, _ := vocab.MarshalJSON(tt.wantItem)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(raw)
+			}))
+
+			_ = vocab.OnIntransitiveActivity(tt.toSend, func(act *vocab.IntransitiveActivity) error {
+				act.Actor = mockActor(vocab.IRI(srv.URL), name)
+				return nil
+			})
+
+			gotIRI, gotItem, err := c.ToOutbox(ctx, tt.toSend)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("Outbox() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+				return
+			}
+			if gotIRI != tt.wantIRI {
+				t.Errorf("ToOutbox() got IRI = %s", cmp.Diff(tt.wantIRI, gotIRI, EquateItems))
+			}
+			if !cmp.Equal(gotItem, tt.wantItem, EquateItems) {
+				t.Errorf("ToOutbox() got item = %s", cmp.Diff(tt.wantItem, gotItem, EquateItems))
+			}
+		})
+	}
+}
+
+func TestC_ToInbox(t *testing.T) {
+	tests := []struct {
+		name     string
+		toSend   vocab.Item
+		wantIRI  vocab.IRI
+		wantItem vocab.Item
+		wantErr  error
+	}{
+		{
+			name: "empty",
+		},
+		{
+			name:    "invalid activity type",
+			toSend:  &vocab.Actor{},
+			wantErr: errors.Annotatef(errors.Newf("unable to convert %T to %T", new(vocab.Actor), new(vocab.IntransitiveActivity)), "object of type %T is not an activity", new(vocab.Actor)),
+		},
+		{
+			name:     "withValidActivity",
+			toSend:   mockActivity(),
+			wantIRI:  "",
+			wantItem: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := C{
+				c:      defaultClient,
+				l:      lw.Dev(lw.SetOutput(t.Output())),
+				infoFn: ctxLogFn(t),
+				errFn:  ctxLogFn(t),
+			}
+			ctx := context.Background()
+
+			name := "jdoe"
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != filepath.Join("/~"+name, "inbox") {
+					errors.NotFound.ServeHTTP(w, r)
+					return
+				}
+				raw, _ := vocab.MarshalJSON(tt.wantItem)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(raw)
+			}))
+
+			_ = vocab.OnIntransitiveActivity(tt.toSend, func(act *vocab.IntransitiveActivity) error {
+				act.Actor = mockActor(vocab.IRI(srv.URL), name)
+				return nil
+			})
+
+			gotIRI, gotItem, err := c.ToInbox(ctx, tt.toSend)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("Inbox() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+				return
+			}
+			if gotIRI != tt.wantIRI {
+				t.Errorf("ToInbox() got IRI = %s", cmp.Diff(tt.wantIRI, gotIRI, EquateItems))
+			}
+			if !cmp.Equal(gotItem, tt.wantItem, EquateItems) {
+				t.Errorf("ToInbox() got item = %s", cmp.Diff(tt.wantItem, gotItem, EquateItems))
+			}
+		})
+	}
+}
+
+func TestActivityActorTargetCollections(t *testing.T) {
+	type args struct {
+		act   vocab.Item
+		colFn iriGenFn
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    vocab.IRIs
+		wantErr error
+	}{
+		{
+			name:    "empty",
+			args:    args{},
+			wantErr: errors.Newf("invalid collection IRI function"),
+		},
+		{
+			name: "w/ activity, w/o colFn",
+			args: args{
+				act:   mockActivity(mockActor("http:/example.com", "jdoe")),
+				colFn: nil,
+			},
+			want:    nil,
+			wantErr: errors.Newf("invalid collection IRI function"),
+		},
+		{
+			name: "w/o activity, w/ colFn",
+			args: args{colFn: inbox},
+			want: nil,
+		},
+		{
+			name: "inbox single actor",
+			args: args{
+				act:   mockActivity(mockActor("http://example.com", "jdoe")),
+				colFn: inbox,
+			},
+			want: vocab.IRIs{"http://example.com/~jdoe/inbox"},
+		},
+		{
+			name: "inbox multiple actors",
+			args: args{
+				act:   mockActivity(mockActor("http://example.com", "jdoe"), mockActor("http://example.com", "alice")),
+				colFn: inbox,
+			},
+			want: vocab.IRIs{"http://example.com/~jdoe/inbox", "http://example.com/~alice/inbox"},
+		},
+		{
+			name: "outbox single actor",
+			args: args{
+				act:   mockActivity(mockActor("http://example.com", "jdoe")),
+				colFn: outbox,
+			},
+			want: vocab.IRIs{"http://example.com/~jdoe/outbox"},
+		},
+		{
+			name: "outbox multiple actors",
+			args: args{
+				act:   mockActivity(mockActor("http://example.com", "jdoe"), mockActor("http://example.com", "alice")),
+				colFn: outbox,
+			},
+			want: vocab.IRIs{"http://example.com/~jdoe/outbox", "http://example.com/~alice/outbox"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ActivityActorTargetCollections(tt.args.act, tt.args.colFn)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("ActivityActorTargetCollections() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+				return
+			}
+			if !cmp.Equal(got, tt.want, EquateItems) {
+				t.Errorf("ActivityActorTargetCollections() got = %s", cmp.Diff(tt.want, got, EquateItems))
+			}
+		})
+	}
+}
