@@ -46,7 +46,6 @@ type Transport struct {
 	// See: https://www.rfc-editor.org/rfc/rfc9421.html#section-2.3-4.12
 	Tag string
 
-	CoveredComponents []string
 	nonceFn           func() (string, error)
 	skipRFCSignatures bool
 
@@ -68,13 +67,6 @@ func WithTransport(tr http.RoundTripper) OptionFn {
 func NoRFC9421(h *Transport) error {
 	h.skipRFCSignatures = true
 	return nil
-}
-
-func WithCoveredComponents(s ...string) OptionFn {
-	return func(h *Transport) error {
-		h.CoveredComponents = s
-		return nil
-	}
 }
 
 func WithNonce(nonceFn func() (string, error)) OptionFn {
@@ -112,7 +104,6 @@ func WithApplicationTag(t string) OptionFn {
 //  that might come from the initialization functions.
 func New(initFns ...OptionFn) *Transport {
 	h := new(Transport)
-	h.CoveredComponents = FetchCoveredComponents
 	h.nonceFn = randomNonce
 	h.l = nilLogger
 	for _, fn := range initFns {
@@ -157,7 +148,7 @@ func randomNonce() (string, error) {
 	return base64.URLEncoding.EncodeToString(nonceBytes), nil
 }
 
-func (s *Transport) signRequestRFC(or *http.Request) error {
+func (s *Transport) signRequestRFC(req *http.Request) error {
 	if s.Actor == nil {
 		return errors.Newf("unable to sign request, Actor is invalid")
 	}
@@ -195,7 +186,7 @@ func (s *Transport) signRequestRFC(or *http.Request) error {
 		alg = &ed.Ed25519{PrivateKey: pk, PublicKey: pub}
 	}
 	// parse the existing signature set on the request
-	set, err := sigset.Unmarshal(or)
+	set, err := sigset.Unmarshal(req)
 	if err != nil {
 		return err
 	}
@@ -206,17 +197,22 @@ func (s *Transport) signRequestRFC(or *http.Request) error {
 		return fmt.Errorf("generating nonce: %w", err)
 	}
 
+	coveredComponents := PostCoveredComponents
+	switch req.Method {
+	case http.MethodHead, http.MethodGet:
+		coveredComponents = FetchCoveredComponents
+	}
 	params := sigparams.Params{
 		KeyID:             keyID,
 		Tag:               s.Tag,
 		Alg:               alg.Type(),
 		Created:           getCurrentTime(),
-		CoveredComponents: s.CoveredComponents,
+		CoveredComponents: coveredComponents,
 		Nonce:             nonce,
 	}
 
 	// derive the signature base following the process in https://www.rfc-editor.org/rfc/rfc9421.html#create-sig-input
-	base, err := sigbase.Derive(params, nil, or, alg.ContentDigest())
+	base, err := sigbase.Derive(params, nil, req, alg.ContentDigest())
 	if err != nil {
 		return fmt.Errorf("deriving signature base: %w", err)
 	}
@@ -226,7 +222,7 @@ func (s *Transport) signRequestRFC(or *http.Request) error {
 		return fmt.Errorf("creating string to sign: %w", err)
 	}
 	// sign the signature base according to the signing algorithm
-	sig, err := alg.Sign(or.Context(), stringToSign)
+	sig, err := alg.Sign(req.Context(), stringToSign)
 	if err != nil {
 		return fmt.Errorf("error signing request: %w", err)
 	}
@@ -238,7 +234,7 @@ func (s *Transport) signRequestRFC(or *http.Request) error {
 	set.Add(&ms)
 
 	// include the signature in the cloned HTTP request.
-	return set.Include(or)
+	return set.Include(req)
 }
 
 var ErrRetry = errors.Newf("retry")
@@ -317,7 +313,7 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			}
 		}
 
-		// NOTE(marius): try #2: use cavage-12 draft signature
+		// NOTE(marius): try #2: use Cavage-12 draft signature
 		res, err = roundTripFn(cloneRequest(&or, buff), s.signRequestCavage)
 		if err == nil || !errors.Is(err, ErrRetry) {
 			return res, err

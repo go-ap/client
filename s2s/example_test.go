@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	prvPemRSA = `-----BEGIN RSA PRIVATE KEY-----
+	_prvPemRSA = `-----BEGIN RSA PRIVATE KEY-----
 MIICXgIBAAKBgQDCFENGw33yGihy92pDjZQhl0C36rPJj+CvfSC8+q28hxA161QF
 NUd13wuCTUcq0Qd2qsBe/2hFyc2DCJJg0h1L78+6Z4UMR7EOcpfdUE9Hf3m/hs+F
 UR45uBJeDK1HSFHD8bHKD6kv8FPGfJTotc+2xjJwoYi+1hqp1fIekaxsyQIDAQAB
@@ -30,14 +30,14 @@ G6aFKaqQfOXKCyWoUiVknQJAXrlgySFci/2ueKlIE1QqIiLSZ8V8OlpFLRnb1pzI
 7U1yQXnTAEFYM560yJlzUpOb1V4cScGd365tiSMvxLOvTA==
 -----END RSA PRIVATE KEY-----`
 
-	block, _  = pem.Decode([]byte(prvPemRSA))
-	prvRSA, _ = x509.ParsePKCS1PrivateKey(block.Bytes)
+	block, _  = pem.Decode([]byte(_prvPemRSA))
+	prv, _    = x509.ParsePKCS1PrivateKey(block.Bytes)
 	millenium = time.Date(2001, time.January, 1, 0, 0, 0, 0, time.UTC)
 
-	actor = func() *vocab.Actor {
+	actorFn = func() *vocab.Actor {
 		actor := new(vocab.Actor)
 		actor.ID = "https://example.com/~johndoe"
-		pub := prvRSA.Public()
+		pub := prv.Public()
 		pubEnc, _ := x509.MarshalPKIXPublicKey(pub)
 		pubEncoded := pem.EncodeToMemory(&pem.Block{
 			Type:  "PUBLIC KEY",
@@ -58,7 +58,7 @@ func ExampleTransport_RoundTrip_draft() {
 		fmt.Printf("%s\n", r.Header.Get("Signature"))
 		w.WriteHeader(http.StatusOK)
 	}))
-	tr := New(WithTransport(http.DefaultTransport), WithActor(actor, prvRSA), NoRFC9421)
+	tr := New(WithTransport(http.DefaultTransport), WithActor(actorFn, prv), NoRFC9421)
 
 	// The below functionality would be equivalent to the following usage:
 	//http.DefaultClient.Transport = tr
@@ -90,15 +90,16 @@ func ExampleTransport_RoundTrip_rfc9421() {
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
-	tr := New(WithTransport(http.DefaultTransport), WithActor(actor, prvRSA), WithNonce(sameNonce))
+	tr := New(WithTransport(http.DefaultTransport), WithActor(actorFn, prv), WithNonce(sameNonce))
 	req := httptest.NewRequest(http.MethodPost, srv.URL, nil)
 	req.Header.Set("Date", millenium.Format(http.TimeFormat))
+	req.Header.Set("Content-Type", "application/json")
 	_, _ = tr.RoundTrip(req)
 
 	// Output:
 	// KeyID: https://example.com/~johndoe#main
 	// Alg: rsa-v1_5-sha256
 	// Nonce: test
-	// CoveredComponents: [@method @target-uri]
+	// CoveredComponents: [@method @target-uri content-type content-length content-digest]
 	//
 }

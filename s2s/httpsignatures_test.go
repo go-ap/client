@@ -5,7 +5,6 @@ import (
 	"crypto"
 	"crypto/x509"
 	"encoding/pem"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -37,22 +36,22 @@ func TestWithActor(t *testing.T) {
 		},
 		{
 			name:    "w/ actor, w/o key",
-			args:    args{actor, nil},
+			args:    args{actorFn, nil},
 			wantErr: nil,
 		},
 		{
 			name:    "w/o actor, w/ key",
-			args:    args{nil, prvRSA},
+			args:    args{nil, prv},
 			wantErr: nil,
 		},
 		{
 			name:    "w/ broken actor, w/ key",
-			args:    args{&vocab.Actor{ID: "https://example.com/~johndoe"}, prvRSA},
+			args:    args{&vocab.Actor{ID: "https://example.com/~johndoe"}, prv},
 			wantErr: nil,
 		},
 		{
 			name:    "w/ actor, w/ RSA key",
-			args:    args{actor, prvRSA},
+			args:    args{actorFn, prv},
 			wantErr: nil,
 		},
 		{
@@ -171,17 +170,14 @@ func TestNew(t *testing.T) {
 		{
 			name:    "empty",
 			initFns: nil,
-			want: &Transport{
-				CoveredComponents: FetchCoveredComponents,
-			},
+			want:    &Transport{},
 		},
 		{
 			name:    "with Actor",
 			initFns: []OptionFn{WithActor(actorED25519, prvED25519)},
 			want: &Transport{
-				CoveredComponents: FetchCoveredComponents,
-				Key:               prvED25519,
-				Actor:             actorED25519,
+				Key:   prvED25519,
+				Actor: actorED25519,
 			},
 		},
 	}
@@ -217,7 +213,7 @@ func TestTransport_RoundTrip(t *testing.T) {
 			wantStatus: http.StatusOK,
 		},
 		{
-			name: "no RFC9421",
+			name: "no RFC9421 - ED25519",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				if sigInput := r.Header.Get("Signature-Input"); sigInput != "" {
 					t.Errorf("RoundTrip() Signature-Input should not exist for cavage-12 signature: %s", sigInput)
@@ -239,7 +235,51 @@ func TestTransport_RoundTrip(t *testing.T) {
 			wantStatus: http.StatusOK,
 		},
 		{
-			name: "with actor",
+			name: "no RFC9421 - RSA",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				if sigInput := r.Header.Get("Signature-Input"); sigInput != "" {
+					t.Errorf("RoundTrip() Signature-Input should not exist for cavage-12 signature: %s", sigInput)
+				}
+				if sig := r.Header.Get("Signature"); sig != "" {
+					t.Logf("RoundTrip() Signature: %s", sig)
+				}
+				w.WriteHeader(http.StatusOK)
+			},
+			initFns: []OptionFn{WithActor(actorRSA, prvRSA), NoRFC9421},
+			req: req{
+				met: http.MethodPost,
+				hdrs: url.Values{
+					"Date": []string{time.Now().Format(http.TimeFormat)},
+					"Host": []string{"example.com"},
+				},
+				body: []byte("test"),
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name: "no RFC9421 - ECDSA",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				if sigInput := r.Header.Get("Signature-Input"); sigInput != "" {
+					t.Errorf("RoundTrip() Signature-Input should not exist for cavage-12 signature: %s", sigInput)
+				}
+				if sig := r.Header.Get("Signature"); sig != "" {
+					t.Logf("RoundTrip() Signature: %s", sig)
+				}
+				w.WriteHeader(http.StatusOK)
+			},
+			initFns: []OptionFn{WithActor(actorECDSA, prvECDSA), NoRFC9421},
+			req: req{
+				met: http.MethodPost,
+				hdrs: url.Values{
+					"Date": []string{time.Now().Format(http.TimeFormat)},
+					"Host": []string{"example.com"},
+				},
+				body: []byte("test"),
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name: "with actor - ED25519",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				if sig := r.Header.Get("Signature"); sig != "" {
 					t.Logf("RoundTrip() Signature: %s", sig)
@@ -251,6 +291,38 @@ func TestTransport_RoundTrip(t *testing.T) {
 			},
 			req:        req{body: []byte("test")},
 			initFns:    []OptionFn{WithActor(actorED25519, prvED25519)},
+			wantStatus: http.StatusOK,
+			wantErr:    nil,
+		},
+		{
+			name: "with actor - RSA",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				if sig := r.Header.Get("Signature"); sig != "" {
+					t.Logf("RoundTrip() Signature: %s", sig)
+				}
+				if sigInput := r.Header.Get("Signature-Input"); sigInput != "" {
+					t.Logf("RoundTrip() Signature-Input: %s", sigInput)
+				}
+				w.WriteHeader(http.StatusOK)
+			},
+			req:        req{body: []byte("test")},
+			initFns:    []OptionFn{WithActor(actorRSA, prvRSA)},
+			wantStatus: http.StatusOK,
+			wantErr:    nil,
+		},
+		{
+			name: "with actor - ECDSA",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				if sig := r.Header.Get("Signature"); sig != "" {
+					t.Logf("RoundTrip() Signature: %s", sig)
+				}
+				if sigInput := r.Header.Get("Signature-Input"); sigInput != "" {
+					t.Logf("RoundTrip() Signature-Input: %s", sigInput)
+				}
+				w.WriteHeader(http.StatusOK)
+			},
+			req:        req{body: []byte("test")},
+			initFns:    []OptionFn{WithActor(actorECDSA, prvECDSA)},
 			wantStatus: http.StatusOK,
 			wantErr:    nil,
 		},
@@ -295,6 +367,43 @@ func TestTransport_RoundTrip(t *testing.T) {
 }
 
 var (
+	prvPemRSA = `-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDEZNd5f+5jjw7Y
+vzhwniZgFOiz80cOWAJtMGtmorjkjaQPE2cmrgWvEHiCYqQ0jnbCSJrMPZXUlXUm
+vsdHaczpbHKlnPKUgC35QpXs3NikWvoZFBhJR99lbGuZilsQj/lMi7Ht7lzmZRDR
+/ZeapRi+otxjSKNe3FH1ONIaXZdBEfRHKfRW2FV9W3L76gX9jsH/2s26r6LYlyLM
+lnQkt2dM+GwYSG4pv/Kl/KE2i/UdJ/o/tealiO5usyZwK3U2vZCJaseMWDbluHTM
+Q1RPPV8SeI5pBqREa2XrSwbcZUI+TaB+xiPvIAjrTboxLY5XyIDwjag+a/aMvzRx
+JAKRmRqhAgMBAAECggEAGYiEzSqZSz9Xrk1aIKYnFhnR0UeBRvehRSHk7MCeKjTS
+DhW3NPuuCH8rM8RwVdbp0MOQwJoHJ07RHtrx3LKALh7n3ulDTpRFpeEGzfc+gUvE
+tUr8B1b9T9njOWCYC1S0lEObO/RgBqJAKBUAx13MlEhnP887UkNxsmCTTFM7rX1W
+AVgHGZo71M6IebHjoLEFmYAXtFgY3+W29J3JOAUsWWCIZYntnOtNAslRYjzyuTRh
+bDTKayKMuRuPo4/jgQhsHS6qsRonK0dQRKLuBX8iHyoXFQP7GVea9liHnm9lqwQ1
+Ve4zvD4IUbV71NVZ6xsY3Nfr7/f8ehatMhSZ/H6BKwKBgQD3Eq7yhOmzGk8Woa2b
+7NBB9UwCoGHIWh/lXj731a/3zD85sS7VXdvyXOwhilMpx/lNmTBhq2ko5qf122xu
+JyQ1DfsKvHs0sHqL1ZVHovpe0lvwxu1Nj/HfsEqlt//qFvXa4Gp5uw/hqcLcxfSa
+Yo8z6m/+QPESMPxwD3FaUmKuiwKBgQDLfWYv/t6m+4v0ROSY+oGW/r6HbYkFWodw
+UU+S2THwOttddJDEOznEZxmJhqAXPMChTkmXL8kn1aRSmn/AHJDVywCxv0xNiIcR
+kjfFmmzdig/HcBoWHPc5aAoZorxDEIb6NWEJt/vEDfnOOLItfufKCy9aKdQ7pwjP
+FcPH7TwNAwKBgFTPNP5KYW35Oeyq0s0THOmHKfA83VPIm+o/z52C3ERS9+D10P2s
+mjM3claRBLryycC5NMJR9Gb1xfG+wBmPlf4gLmwhBqmvamFVj0hnyUmDK8wafJqD
+LqN6ACWiY1YXS402O1ZNv8XWX+0ohi34Zu+LKaY85IM6DWzp4B8A6J7BAoGBALkK
+SAE/B6LavXKbrzA5I9x1vDYUcfQPVXfaSLzlipbEPrRmCjqXDLm/cyZu6GcZFKXa
+NesoRghWKv3+hkrg7weqePApX65lh0WAK/0hpvtxz1VxaBdRsbJfHEghhoaJoeQm
+5B3dUzD98HoJbmUWsJo2v5GC1f6Erur5BLZp0SCXAoGAPFS3336Z1pK0Ne+Qw83x
+V9dcGszH2HYfU4AVOyxIRK6DDsw0k/r4zi/0AfRjnPlP89qffTZfkEgW+/jXQYzr
+B5MKfJ21HzAim4dyNzhbViNqzQtRZhP7/ESJJVF1CUbyIr3xqwww0rVdWxgTPrra
+CymanYHXIAFVDKU/1A099Uw=
+-----END PRIVATE KEY-----`
+	pubPemRSA = `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxGTXeX/uY48O2L84cJ4m
+YBTos/NHDlgCbTBrZqK45I2kDxNnJq4FrxB4gmKkNI52wkiazD2V1JV1Jr7HR2nM
+6WxypZzylIAt+UKV7NzYpFr6GRQYSUffZWxrmYpbEI/5TIux7e5c5mUQ0f2XmqUY
+vqLcY0ijXtxR9TjSGl2XQRH0Ryn0VthVfVty++oF/Y7B/9rNuq+i2JcizJZ0JLdn
+TPhsGEhuKb/ypfyhNov1HSf6P7XmpYjubrMmcCt1Nr2QiWrHjFg25bh0zENUTz1f
+EniOaQakRGtl60sG3GVCPk2gfsYj7yAI6026MS2OV8iA8I2oPmv2jL80cSQCkZka
+oQIDAQAB
+-----END PUBLIC KEY-----`
 	prvPemED25519 = `-----BEGIN PRIVATE KEY-----
 MC4CAQAwBQYDK2VwBCIEIENuo6tAn+SGsIM2z6bVx7VZpy4HYCeXKl1hV6uT4DVb
 -----END PRIVATE KEY-----`
@@ -319,8 +428,8 @@ DwcMY+iaEAgUTM1wAZ097BDYA7slyqP7
 	actorECDSA = &vocab.Actor{
 		ID: "https://example.com/~johndoe",
 		PublicKey: vocab.PublicKey{
-			ID:           vocab.IRI(fmt.Sprintf("%s#main", actor.ID)),
-			Owner:        actor.ID,
+			ID:           "https://example.com/~johndoe#main",
+			Owner:        actorFn.ID,
 			PublicKeyPem: pubPemECDSA,
 		},
 	}
@@ -331,9 +440,21 @@ DwcMY+iaEAgUTM1wAZ097BDYA7slyqP7
 	actorED25519 = &vocab.Actor{
 		ID: "https://example.com/~johndoe",
 		PublicKey: vocab.PublicKey{
-			ID:           vocab.IRI(fmt.Sprintf("%s#main", actor.ID)),
-			Owner:        actor.ID,
+			ID:           "https://example.com/~johndoe#main",
+			Owner:        actorFn.ID,
 			PublicKeyPem: pubPemED25519,
+		},
+	}
+
+	blockRSA, _ = pem.Decode([]byte(prvPemRSA))
+	prvRSA, _   = x509.ParsePKCS8PrivateKey(blockRSA.Bytes)
+
+	actorRSA = &vocab.Actor{
+		ID: "https://example.com/~johndoe",
+		PublicKey: vocab.PublicKey{
+			ID:           "https://example.com/~johndoe#main",
+			Owner:        actorFn.ID,
+			PublicKeyPem: pubPemRSA,
 		},
 	}
 )
