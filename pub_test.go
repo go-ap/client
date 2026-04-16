@@ -1436,11 +1436,11 @@ func mockActivity(a ...vocab.Item) *vocab.Activity {
 
 func TestC_ToOutbox(t *testing.T) {
 	tests := []struct {
-		name     string
-		toSend   vocab.Item
-		wantIRI  vocab.IRI
-		wantItem vocab.Item
-		wantErr  error
+		name    string
+		toSend  vocab.Item
+		wantIRI vocab.IRI
+		wantIt  vocab.Item
+		wantErr error
 	}{
 		{
 			name: "empty",
@@ -1451,10 +1451,10 @@ func TestC_ToOutbox(t *testing.T) {
 			wantErr: errors.Annotatef(errors.Newf("unable to convert %T to %T", new(vocab.Actor), new(vocab.IntransitiveActivity)), "object of type %T is not an activity", new(vocab.Actor)),
 		},
 		{
-			name:     "withValidActivity",
-			toSend:   mockActivity(),
-			wantIRI:  "",
-			wantItem: nil,
+			name:    "withValidActivity",
+			toSend:  mockActivity(),
+			wantIRI: "",
+			wantIt:  nil,
 		},
 	}
 	for _, tt := range tests {
@@ -1473,8 +1473,8 @@ func TestC_ToOutbox(t *testing.T) {
 					errors.NotFound.ServeHTTP(w, r)
 					return
 				}
-				raw, _ := vocab.MarshalJSON(tt.wantItem)
 				w.WriteHeader(http.StatusOK)
+				raw, _ := vocab.MarshalJSON(tt.wantIt)
 				_, _ = w.Write(raw)
 			}))
 
@@ -1483,7 +1483,7 @@ func TestC_ToOutbox(t *testing.T) {
 				return nil
 			})
 
-			gotIRI, gotItem, err := c.ToOutbox(ctx, tt.toSend)
+			gotIRI, gotIt, err := c.ToOutbox(ctx, tt.toSend)
 			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
 				t.Errorf("Outbox() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
 				return
@@ -1491,8 +1491,8 @@ func TestC_ToOutbox(t *testing.T) {
 			if gotIRI != tt.wantIRI {
 				t.Errorf("ToOutbox() got IRI = %s", cmp.Diff(tt.wantIRI, gotIRI, EquateItems))
 			}
-			if !cmp.Equal(gotItem, tt.wantItem, EquateItems) {
-				t.Errorf("ToOutbox() got item = %s", cmp.Diff(tt.wantItem, gotItem, EquateItems))
+			if !cmp.Equal(gotIt, tt.wantIt, EquateItems) {
+				t.Errorf("ToOutbox() got item = %s", cmp.Diff(tt.wantIt, gotIt, EquateItems))
 			}
 		})
 	}
@@ -1500,11 +1500,11 @@ func TestC_ToOutbox(t *testing.T) {
 
 func TestC_ToInbox(t *testing.T) {
 	tests := []struct {
-		name     string
-		toSend   vocab.Item
-		wantIRI  vocab.IRI
-		wantItem vocab.Item
-		wantErr  error
+		name    string
+		toSend  vocab.Item
+		wantIRI vocab.IRI
+		wantIt  vocab.Item
+		wantErr error
 	}{
 		{
 			name: "empty",
@@ -1515,10 +1515,10 @@ func TestC_ToInbox(t *testing.T) {
 			wantErr: errors.Annotatef(errors.Newf("unable to convert %T to %T", new(vocab.Actor), new(vocab.IntransitiveActivity)), "object of type %T is not an activity", new(vocab.Actor)),
 		},
 		{
-			name:     "withValidActivity",
-			toSend:   mockActivity(),
-			wantIRI:  "",
-			wantItem: nil,
+			name:    "withValidActivity",
+			toSend:  mockActivity(),
+			wantIRI: "",
+			wantIt:  nil,
 		},
 	}
 	for _, tt := range tests {
@@ -1537,7 +1537,7 @@ func TestC_ToInbox(t *testing.T) {
 					errors.NotFound.ServeHTTP(w, r)
 					return
 				}
-				raw, _ := vocab.MarshalJSON(tt.wantItem)
+				raw, _ := vocab.MarshalJSON(tt.wantIt)
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write(raw)
 			}))
@@ -1547,7 +1547,7 @@ func TestC_ToInbox(t *testing.T) {
 				return nil
 			})
 
-			gotIRI, gotItem, err := c.ToInbox(ctx, tt.toSend)
+			gotIRI, gotIt, err := c.ToInbox(ctx, tt.toSend)
 			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
 				t.Errorf("Inbox() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
 				return
@@ -1555,8 +1555,8 @@ func TestC_ToInbox(t *testing.T) {
 			if gotIRI != tt.wantIRI {
 				t.Errorf("ToInbox() got IRI = %s", cmp.Diff(tt.wantIRI, gotIRI, EquateItems))
 			}
-			if !cmp.Equal(gotItem, tt.wantItem, EquateItems) {
-				t.Errorf("ToInbox() got item = %s", cmp.Diff(tt.wantItem, gotItem, EquateItems))
+			if !cmp.Equal(gotIt, tt.wantIt, EquateItems) {
+				t.Errorf("ToInbox() got item = %s", cmp.Diff(tt.wantIt, gotIt, EquateItems))
 			}
 		})
 	}

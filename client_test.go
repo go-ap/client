@@ -1,9 +1,11 @@
 package client
 
 import (
+	"context"
 	"crypto/tls"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 	"time"
@@ -370,6 +372,212 @@ func TestHTTPClient(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := HTTPClient(tt.client); !cmp.Equal(got, tt.want, ignoredTransports, equateFuncs) {
 				t.Errorf("HTTPClient() = %s", cmp.Diff(tt.want, got, ignoredTransports, equateFuncs))
+			}
+		})
+	}
+}
+
+func TestC_ToCollection(t *testing.T) {
+	type args struct {
+		toSend   vocab.Item
+		colPaths vocab.CollectionPaths
+	}
+	tests := []struct {
+		name    string
+		client  httpClient
+		args    args
+		wantIRI vocab.IRI
+		wantIt  vocab.Item
+		wantErr error
+	}{
+		{
+			name:    "empty",
+			client:  nil,
+			args:    args{},
+			wantIRI: "",
+			wantIt:  nil,
+		},
+		{
+			name: "no collection IRIs",
+			args: args{toSend: &vocab.Actor{}},
+		},
+		{
+			name: "activity type",
+			args: args{toSend: &vocab.Activity{}, colPaths: vocab.CollectionPaths{vocab.Inbox}},
+		},
+		{
+			name: "activity type with multiple paths",
+			args: args{toSend: &vocab.Activity{}, colPaths: vocab.CollectionPaths{vocab.Inbox, vocab.Outbox}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				raw, _ := vocab.MarshalJSON(tt.wantIt)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(raw)
+			}))
+
+			name := "jdoe"
+			toCollections := make(vocab.IRIs, 0, len(tt.args.colPaths))
+			_ = vocab.OnIntransitiveActivity(tt.args.toSend, func(act *vocab.IntransitiveActivity) error {
+				act.Actor = mockActor(vocab.IRI(srv.URL), name)
+				return nil
+			})
+
+			for _, col := range tt.args.colPaths {
+				toCollections = append(toCollections, col.IRI(vocab.IRI(srv.URL).AddPath(name)))
+			}
+
+			c := C{
+				c:      tt.client,
+				l:      lw.Dev(lw.SetOutput(t.Output())),
+				infoFn: ctxLogFn(t),
+				errFn:  ctxLogFn(t),
+			}
+
+			gotIRI, gotIt, err := c.ToCollection(tt.args.toSend, toCollections...)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("ToCollection() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+				return
+			}
+			if gotIRI != tt.wantIRI {
+				t.Errorf("ToCollection() got IRI = %v, want %v", gotIRI, tt.wantIRI)
+			}
+			if !cmp.Equal(gotIt, tt.wantIt, EquateItems) {
+				t.Errorf("ToCollection() got Item = %s", cmp.Diff(tt.wantIt, gotIt, EquateItems))
+			}
+		})
+	}
+}
+
+func TestC_toCollection(t *testing.T) {
+	type args struct {
+		ctx     context.Context
+		act     vocab.Item
+		colPath vocab.CollectionPath
+	}
+	tests := []struct {
+		name      string
+		client    httpClient
+		handlerFn http.HandlerFunc
+		args      args
+		wantIRI   vocab.IRI
+		wantIt    vocab.Item
+		wantErr   error
+	}{
+		{
+			name:    "empty",
+			wantErr: errors.Newf("invalid IRI to POST to"),
+		},
+		{
+			name:   "nil response",
+			client: http.DefaultClient,
+			args: args{
+				ctx:     context.Background(),
+				act:     mockActivity(),
+				colPath: vocab.Outbox,
+			},
+			handlerFn: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			},
+			wantIRI: "",
+			wantIt:  nil,
+			wantErr: nil,
+		},
+		{
+			name:   "nil response with Location",
+			client: http.DefaultClient,
+			args: args{
+				ctx:     context.Background(),
+				act:     mockActivity(),
+				colPath: vocab.Outbox,
+			},
+			handlerFn: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Add("Location", "http://example.com/1")
+				w.WriteHeader(http.StatusOK)
+			},
+			wantIRI: "http://example.com/1",
+			wantIt:  nil,
+			wantErr: nil,
+		},
+		{
+			name:   "response with Location",
+			client: http.DefaultClient,
+			args: args{
+				ctx:     context.Background(),
+				act:     mockActivity(),
+				colPath: vocab.Outbox,
+			},
+			handlerFn: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Add("Location", "http://example.com/666")
+				w.WriteHeader(http.StatusOK)
+				raw, _ := vocab.MarshalJSON(vocab.Object{ID: "http://example.com/note-1", Type: vocab.NoteType})
+				_, _ = w.Write(raw)
+			},
+			wantIRI: "http://example.com/666",
+			wantIt:  &vocab.Object{ID: "http://example.com/note-1", Type: vocab.NoteType},
+			wantErr: nil,
+		},
+		{
+			name:   "404 response",
+			client: http.DefaultClient,
+			args: args{
+				ctx:     context.Background(),
+				act:     mockActivity(),
+				colPath: vocab.Outbox,
+			},
+			handlerFn: errors.HandleError(errors.NotFoundf("test")).ServeHTTP,
+			wantErr:   errors.NotFoundf("test"),
+		},
+		{
+			name:   "401 response",
+			client: http.DefaultClient,
+			args: args{
+				ctx:     context.Background(),
+				act:     mockActivity(),
+				colPath: vocab.Outbox,
+			},
+			handlerFn: errors.HandleError(errors.Unauthorizedf("STOP")).ServeHTTP,
+			wantErr:   errors.Unauthorizedf("STOP"),
+		},
+		{
+			name:   "500 response",
+			client: http.DefaultClient,
+			args: args{
+				ctx:     context.Background(),
+				act:     mockActivity(),
+				colPath: vocab.Outbox,
+			},
+			handlerFn: errors.HandleError(errors.Errorf("¡OOPS!")).ServeHTTP,
+			wantErr:   errors.Errorf("invalid status received: 500: test: ¡OOPS!"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := C{
+				c:      tt.client,
+				l:      lw.Dev(lw.SetOutput(t.Output())),
+				infoFn: ctxLogFn(t),
+				errFn:  ctxLogFn(t),
+			}
+
+			var colIRI vocab.IRI
+			if tt.args.colPath != "" {
+				srv := httptest.NewServer(tt.handlerFn)
+				colIRI = tt.args.colPath.IRI(vocab.IRI(srv.URL))
+			}
+
+			gotIRI, gotIt, err := c.toCollection(tt.args.ctx, tt.args.act, colIRI)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("toCollection() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+				return
+			}
+			if gotIRI != tt.wantIRI {
+				t.Errorf("toCollection() got IRI = %s, want %s", gotIRI, tt.wantIRI)
+			}
+			if !cmp.Equal(gotIt, tt.wantIt, EquateItems) {
+				t.Errorf("toCollection() got item = %s", cmp.Diff(tt.wantIt, gotIt, EquateItems))
 			}
 		})
 	}

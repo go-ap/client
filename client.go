@@ -280,6 +280,9 @@ func (c *C) Do(req *http.Request) (*http.Response, error) {
 }
 
 func (c C) do(ctx context.Context, url, method, contentType string, body io.Reader) (*http.Response, error) {
+	if c.c == nil {
+		c.c = defaultClient
+	}
 	req, err := c.req(ctx, method, url, contentType, body)
 	if err != nil {
 		return nil, err
@@ -289,39 +292,9 @@ func (c C) do(ctx context.Context, url, method, contentType string, body io.Read
 
 const contentTypeAny = "*/*"
 
-// Head
-func (c C) Head(url string) (*http.Response, error) {
-	return c.do(context.Background(), url, http.MethodHead, contentTypeAny, nil)
-}
-
 // CtxGet wrapper over the functionality offered by the default http.Client object
 func (c C) CtxGet(ctx context.Context, url string) (*http.Response, error) {
 	return c.do(ctx, url, http.MethodGet, contentTypeAny, nil)
-}
-
-// Get wrapper over the functionality offered by the default http.Client object
-func (c C) Get(url string) (*http.Response, error) {
-	return c.do(context.Background(), url, http.MethodGet, contentTypeAny, nil)
-}
-
-// CtxPost wrapper over the functionality offered by the default http.Client object
-func (c C) CtxPost(ctx context.Context, url, contentType string, body io.Reader) (*http.Response, error) {
-	return c.do(ctx, url, http.MethodPost, contentType, body)
-}
-
-// Post wrapper over the functionality offered by the default http.Client object
-func (c C) Post(url, contentType string, body io.Reader) (*http.Response, error) {
-	return c.do(context.Background(), url, http.MethodPost, contentType, body)
-}
-
-// Put wrapper over the functionality offered by the default http.Client object
-func (c C) Put(url, contentType string, body io.Reader) (*http.Response, error) {
-	return c.do(context.Background(), url, http.MethodPut, contentType, body)
-}
-
-// Delete wrapper over the functionality offered by the default http.Client object
-func (c C) Delete(url, contentType string, body io.Reader) (*http.Response, error) {
-	return c.do(context.Background(), url, http.MethodDelete, contentType, body)
 }
 
 func (c C) toCollections(ctx context.Context, act vocab.Item, colIRI ...vocab.IRI) (vocab.IRI, vocab.Item, error) {
@@ -333,7 +306,9 @@ func (c C) toCollections(ctx context.Context, act vocab.Item, colIRI ...vocab.IR
 		if err != nil {
 			return "", result, err
 		}
-		result = append(result, it)
+		if !vocab.IsNil(it) {
+			result = append(result, it)
+		}
 		actIRIs = append(actIRIs, actIRI)
 	}
 
@@ -355,11 +330,11 @@ func (c C) toCollections(ctx context.Context, act vocab.Item, colIRI ...vocab.IR
 	return iri, it, nil
 }
 
-func (c C) toCollection(ctx context.Context, a vocab.Item, colIRI vocab.IRI) (vocab.IRI, vocab.Item, error) {
+func (c C) toCollection(ctx context.Context, act vocab.Item, colIRI vocab.IRI) (vocab.IRI, vocab.Item, error) {
 	if len(colIRI) == 0 {
-		return "", nil, errf("invalid URL to post to").iri(colIRI)
+		return "", nil, errf("invalid IRI to POST to")
 	}
-	body, err := jsonld.WithContext(jsonld.IRI(vocab.ActivityBaseURI), jsonld.IRI(vocab.SecurityContextURI)).Marshal(a)
+	body, err := jsonld.WithContext(jsonld.IRI(vocab.ActivityBaseURI), jsonld.IRI(vocab.SecurityContextURI)).Marshal(act)
 	if err != nil {
 		return "", nil, errf("unable to marshal activity").iri(colIRI)
 	}
