@@ -8,8 +8,10 @@ import (
 	mrand "math/rand/v2"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -112,7 +114,7 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 		ClientID:     auth.ClientID,
 		ClientSecret: auth.ClientSecret,
 		Endpoint:     getActorOAuthEndpoint(*actor),
-		RedirectURL:  fmt.Sprintf("http://%s:%d", LocalInterfaceAddress, RandPort),
+		RedirectURL:  "http://" + LocalInterfaceAddress + ":" + strconv.Itoa(RandPort),
 	}
 	if auth.RedirectURL != "" {
 		app.Conf.RedirectURL = auth.RedirectURL
@@ -264,7 +266,12 @@ func OAuth2Client(ctx context.Context, c *C2S) *http.Client {
 	return httpC
 }
 
+const testingEnvVariable = "_ISTEST"
+
 func openbrowser(url string) error {
+	if os.Getenv(testingEnvVariable) != "" {
+		return nil
+	}
 	var err error
 
 	switch runtime.GOOS {
@@ -383,9 +390,9 @@ func handleOAuth2Flow(ctx context.Context, app *oauth2.Config) (*oauth2.Token, e
 	select {
 	case <-ctx.Done():
 		if err = ctx.Err(); err != nil {
-			return nil, fmt.Errorf("unable to authorize, reached timeout: %w", err)
+			return nil, errors.Annotatef(err, "unable to authorize, reached timeout")
 		}
-		return nil, fmt.Errorf("context done")
+		return nil, errors.Newf("context done")
 	case resp := <-callbackCh:
 		if resp.err != nil {
 			return nil, resp.err

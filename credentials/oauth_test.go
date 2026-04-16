@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -292,13 +293,17 @@ func TestC2S_Sign(t *testing.T) {
 func Test_dumbProgressBar(t *testing.T) {
 	tests := []struct {
 		name     string
-		ctx      context.Context
 		waitTime time.Duration
 		want     string
 	}{
 		{
 			name: "1s run time",
 			want: "\rWaiting for 1s\r",
+		},
+		{
+			name:     "10ms run time",
+			waitTime: 10 * time.Millisecond,
+			want:     "",
 		},
 	}
 	for _, tt := range tests {
@@ -324,7 +329,13 @@ func Test_dumbProgressBar(t *testing.T) {
 				_ = r.Close()
 			})
 
-			dumbProgressBar(context.Background())
+			ctx := context.Background()
+			if tt.waitTime > 0 {
+				var cancelFn func()
+				ctx, cancelFn = context.WithTimeout(ctx, tt.waitTime)
+				defer cancelFn()
+			}
+			dumbProgressBar(ctx)
 
 			output := buf.String()
 			if output != tt.want {
@@ -526,6 +537,66 @@ func Test_handleCallback(t *testing.T) {
 			if cbRes.tok != tt.wantTok {
 				t.Errorf("handleCallback() tok = %v, want %v", cbRes.tok, tt.wantTok)
 			}
+		})
+	}
+}
+
+func Test_handleOAuth2Flow(t *testing.T) {
+	tests := []struct {
+		name    string
+		params  url.Values
+		want    *oauth2.Token
+		wantErr error
+	}{
+		{
+			name:    "empty",
+			wantErr: errors.Annotatef(context.DeadlineExceeded, "unable to authorize, reached timeout"),
+		},
+		//{
+		//	name:   "valid",
+		//	params: url.Values{"state": []string{"OK"}, "code": []string{"g00d"}},
+		//	want: &oauth2.Token{
+		//		AccessToken:  "test",
+		//		TokenType:    "Bearer",
+		//		RefreshToken: "ref",
+		//	},
+		//},
+	}
+	// NOTE(marius): to avoid calling xdg-open in openbrowser()
+	_ = os.Setenv(testingEnvVariable, "1")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancelFn := context.WithTimeout(context.Background(), time.Second)
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Add("Location", "http://"+LocalInterfaceAddress+":"+strconv.Itoa(RandPort)+"?"+tt.params.Encode())
+				w.WriteHeader(http.StatusSeeOther)
+
+				cancelFn()
+			}))
+
+			// ?client_id=&code_challenge=7_rCPj49TXNag-HvBC0VajFFg54CGkyD5C8OD-_m2cU&code_challenge_method=S256&response_type=code&state=IYQ4DMBFMAOPKK22XC7HXLDZP7
+			conf := oauth2.Config{
+				ClientID:     "test-client",
+				ClientSecret: "no-s3cr3t",
+				Endpoint: oauth2.Endpoint{
+					AuthURL:  srv.URL + "/auth",
+					TokenURL: srv.URL + "/tok",
+				},
+				RedirectURL: "http://" + LocalInterfaceAddress + ":" + strconv.Itoa(RandPort),
+				Scopes:      []string{"s1", "s2"},
+			}
+
+			got, err := handleOAuth2Flow(ctx, &conf)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("handleOAuth2Flow() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+				return
+			}
+			if !cmp.Equal(got, tt.want, cmpopts.IgnoreUnexported(oauth2.Token{})) {
+				t.Errorf("handleOAuth2Flow() got = %s", cmp.Diff(tt.want, got, cmpopts.IgnoreUnexported(oauth2.Token{})))
+			}
+			cancelFn()
 		})
 	}
 }

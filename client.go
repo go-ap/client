@@ -382,10 +382,13 @@ func (c C) CtxToCollection(ctx context.Context, a vocab.Item, url ...vocab.IRI) 
 	return c.toCollections(ctx, a, url...)
 }
 
-func HTTPClient(c C) *http.Client {
+func HTTPClient(c *C) *http.Client {
+	if c == nil {
+		return nil
+	}
 	switch httpC := c.c.(type) {
 	case *C:
-		return HTTPClient(*httpC)
+		return HTTPClient(httpC)
 	case *http.Client:
 		return httpC
 	default:

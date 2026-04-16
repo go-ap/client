@@ -350,7 +350,7 @@ func TestWithHTTPClient(t *testing.T) {
 func TestHTTPClient(t *testing.T) {
 	tests := []struct {
 		name   string
-		client C
+		client *C
 		want   *http.Client
 	}{
 		{
@@ -359,12 +359,12 @@ func TestHTTPClient(t *testing.T) {
 		},
 		{
 			name:   "with http.Client",
-			client: C{c: &http.Client{Timeout: 666 * time.Second}},
+			client: &C{c: &http.Client{Timeout: 666 * time.Second}},
 			want:   &http.Client{Timeout: 666 * time.Second},
 		},
 		{
 			name:   "with C client",
-			client: C{c: &C{c: &http.Client{Timeout: 66 * time.Second}}},
+			client: &C{c: &C{c: &http.Client{Timeout: 66 * time.Second}}},
 			want:   &http.Client{Timeout: 66 * time.Second},
 		},
 	}
