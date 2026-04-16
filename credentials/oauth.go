@@ -310,6 +310,43 @@ func CodeVerifier() string {
 	return string(src)
 }
 
+type callbackResponse struct {
+	tok string
+	err error
+}
+
+func handleCallback(callbackCh chan callbackResponse, state string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/favicon.ico" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = r.ParseForm()
+		if token := r.Form.Get("code"); token != "" {
+			callbackCh <- callbackResponse{tok: token}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(successCallbackHTML))
+			return
+		}
+
+		var cbErr error
+		if r.Form.Get("error") != "" {
+			var desc string
+			if ed := r.Form.Get("error_description"); len(ed) > 0 {
+				desc = ": " + ed
+			}
+			cbErr = fmt.Errorf("%s%s", r.Form.Get("error"), desc)
+		} else if r.Form.Get("state") != state {
+			cbErr = fmt.Errorf("state parameter mismatch")
+		} else {
+			cbErr = fmt.Errorf("token is missing")
+		}
+		callbackCh <- callbackResponse{err: cbErr}
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(fmt.Sprintf(errorCallbackHTML, cbErr)))
+	}
+}
+
 func handleOAuth2Flow(ctx context.Context, app *oauth2.Config) (*oauth2.Token, error) {
 	state := rand.Text()
 
@@ -332,42 +369,12 @@ func handleOAuth2Flow(ctx context.Context, app *oauth2.Config) (*oauth2.Token, e
 	}
 	defer l.Close()
 
-	type callbackResponse struct {
-		tok string
-		err error
-	}
-
 	callbackCh := make(chan callbackResponse)
 
 	ctx, cancelFn := context.WithTimeout(ctx, authWaitDuration)
 	defer cancelFn()
 
-	fn := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/favicon.ico" {
-			http.NotFound(w, r)
-			return
-		}
-		_ = r.ParseForm()
-		if token := r.Form.Get("code"); token != "" {
-			callbackCh <- callbackResponse{tok: token}
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(successCallbackHTML))
-			return
-		}
-
-		var cbErr error
-		if r.Form.Get("error") != "" {
-			cbErr = fmt.Errorf("%s: %s", r.Form.Get("error"), r.Form.Get("error_description"))
-		} else if r.Form.Get("state") != state {
-			cbErr = fmt.Errorf("state parameter mismatch")
-		} else {
-			cbErr = fmt.Errorf("token is missing")
-		}
-		callbackCh <- callbackResponse{err: cbErr}
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(fmt.Sprintf(errorCallbackHTML, cbErr)))
-	})
-	srv := &http.Server{Handler: fn}
+	srv := &http.Server{Handler: handleCallback(callbackCh, state)}
 
 	go srv.Serve(l)
 	go dumbProgressBar(ctx)

@@ -3,15 +3,17 @@ package credentials
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
 	vocab "github.com/go-ap/activitypub"
+	"github.com/go-ap/errors"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"golang.org/x/oauth2"
@@ -81,7 +83,7 @@ func TestC2S_Refresh(t *testing.T) {
 	}{
 		{
 			name:    "empty",
-			wantErr: errors.New("oauth2: token expired and refresh token is not set"),
+			wantErr: errors.Newf("oauth2: token expired and refresh token is not set"),
 		},
 		{
 			name: "with refresh tok",
@@ -379,7 +381,7 @@ func Test_normalizeActorURL(t *testing.T) {
 			name:     "empty",
 			actorURL: "",
 			want:     "",
-			wantErr:  errors.New("invalid actor URL: empty IRI"),
+			wantErr:  errors.Newf("invalid actor URL: empty IRI"),
 		},
 		{
 			name:     "no proto",
@@ -446,6 +448,83 @@ func Test_getActorOAuthEndpoint(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := getActorOAuthEndpoint(tt.actor); !cmp.Equal(got, tt.want) {
 				t.Errorf("getActorOAuthEndpoint() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_handleCallback(t *testing.T) {
+	tests := []struct {
+		name       string
+		state      string
+		params     string
+		wantStatus int
+		wantTok    string
+		wantErr    error
+	}{
+		{
+			name:       "empty",
+			wantStatus: http.StatusUnauthorized,
+			wantErr:    errors.Newf("token is missing"),
+		},
+		{
+			name:       "w/ error, w/o description",
+			params:     (url.Values{"error": []string{"test"}}).Encode(),
+			wantStatus: http.StatusUnauthorized,
+			wantErr:    errors.Newf("test"),
+		},
+		{
+			name:       "w/ error, w/ description",
+			params:     (url.Values{"error": []string{"test"}, "error_description": []string{"description"}}).Encode(),
+			wantStatus: http.StatusUnauthorized,
+			wantErr:    errors.Newf("test: description"),
+		},
+		{
+			name:       "state mismatch",
+			state:      "test",
+			params:     (url.Values{"state": []string{"invalid"}}).Encode(),
+			wantStatus: http.StatusUnauthorized,
+			wantErr:    errors.Newf("state parameter mismatch"),
+		},
+		{
+			name:       "good response",
+			state:      "OK",
+			params:     (url.Values{"state": []string{"OK"}, "code": []string{"g00d"}}).Encode(),
+			wantStatus: http.StatusOK,
+			wantTok:    "g00d",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			callbackCh := make(chan callbackResponse, 1)
+			handlerFn := handleCallback(callbackCh, tt.state)
+			srv := httptest.NewServer(handlerFn)
+			defer srv.Close()
+
+			{
+				// NOTE(marius): test favicon returns not found
+				res, err := http.Get(srv.URL + "/favicon.ico")
+				if err != nil {
+					t.Errorf("handleCallback() GET /favicon.ico request returned unexpected error: %s", err)
+				}
+				if res.StatusCode != http.StatusNotFound {
+					t.Errorf("handleCallback() GET /favicon.ico unexpected status: %d, wanted %d", res.StatusCode, tt.wantStatus)
+				}
+			}
+
+			res, err := http.Get(srv.URL + "?" + tt.params)
+			if err != nil {
+				t.Errorf("handleCallback() GET request returned unexpected error: %s", err)
+			}
+			if res.StatusCode != tt.wantStatus {
+				t.Errorf("handleCallback() GET unexpected status: %d, wanted %d", res.StatusCode, tt.wantStatus)
+			}
+			cbRes := <-callbackCh
+			if !cmp.Equal(cbRes.err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("handleCallback() error = %s", cmp.Diff(tt.wantErr, cbRes.err, EquateWeakErrors))
+			}
+			if cbRes.tok != tt.wantTok {
+				t.Errorf("handleCallback() tok = %v, want %v", cbRes.tok, tt.wantTok)
 			}
 		})
 	}

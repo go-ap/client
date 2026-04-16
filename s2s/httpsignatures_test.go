@@ -331,6 +331,8 @@ func TestTransport_RoundTrip(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(tt.handler)
+			defer server.Close()
+
 			dt := New(tt.initFns...)
 
 			var body io.Reader

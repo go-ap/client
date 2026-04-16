@@ -417,6 +417,7 @@ func TestC_ToCollection(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write(raw)
 			}))
+			defer srv.Close()
 
 			name := "jdoe"
 			toCollections := make(vocab.IRIs, 0, len(tt.args.colPaths))
@@ -565,6 +566,7 @@ func TestC_toCollection(t *testing.T) {
 			var colIRI vocab.IRI
 			if tt.args.colPath != "" {
 				srv := httptest.NewServer(tt.handlerFn)
+				defer srv.Close()
 				colIRI = tt.args.colPath.IRI(vocab.IRI(srv.URL))
 			}
 

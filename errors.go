@@ -36,10 +36,6 @@ func errf(msg string, p ...interface{}) cerr {
 	}
 }
 
-func annotate(err error) cerr {
-	return cerr{err: err}
-}
-
 // Error returns the formatted error
 func (e cerr) Error() string {
 	s := strings.Builder{}

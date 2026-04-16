@@ -598,6 +598,7 @@ func TestC_Collection(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write(raw)
 			}))
+			defer srv.Close()
 
 			ctx := context.Background()
 			var iri vocab.IRI
@@ -680,6 +681,7 @@ func TestC_Inbox(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write(raw)
 			}))
+			defer srv.Close()
 
 			ctx := context.Background()
 			var iri vocab.IRI
@@ -819,6 +821,7 @@ func TestC_Outbox(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write(raw)
 			}))
+			defer srv.Close()
 
 			ctx := context.Background()
 			var iri vocab.IRI
@@ -881,6 +884,7 @@ func TestC_Followers(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write(raw)
 			}))
+			defer srv.Close()
 
 			ctx := context.Background()
 			var iri vocab.IRI
@@ -943,6 +947,7 @@ func TestC_Following(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write(raw)
 			}))
+			defer srv.Close()
 
 			ctx := context.Background()
 			var iri vocab.IRI
@@ -1005,6 +1010,7 @@ func TestC_Liked(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write(raw)
 			}))
+			defer srv.Close()
 
 			ctx := context.Background()
 			var iri vocab.IRI
@@ -1067,6 +1073,7 @@ func TestC_Likes(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write(raw)
 			}))
+			defer srv.Close()
 
 			ctx := context.Background()
 			var iri vocab.IRI
@@ -1129,6 +1136,7 @@ func TestC_Shares(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write(raw)
 			}))
+			defer srv.Close()
 
 			ctx := context.Background()
 			var iri vocab.IRI
@@ -1191,6 +1199,7 @@ func TestC_Replies(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write(raw)
 			}))
+			defer srv.Close()
 
 			ctx := context.Background()
 			var iri vocab.IRI
@@ -1256,6 +1265,7 @@ func TestC_Actor(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write(raw)
 			}))
+			defer srv.Close()
 
 			ctx := context.Background()
 			var iri vocab.IRI
@@ -1321,6 +1331,7 @@ func TestC_Object(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write(raw)
 			}))
+			defer srv.Close()
 
 			ctx := context.Background()
 			var iri vocab.IRI
@@ -1396,6 +1407,7 @@ func TestC_Activity(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write(raw)
 			}))
+			defer srv.Close()
 
 			ctx := context.Background()
 			var iri vocab.IRI
@@ -1477,6 +1489,7 @@ func TestC_ToOutbox(t *testing.T) {
 				raw, _ := vocab.MarshalJSON(tt.wantIt)
 				_, _ = w.Write(raw)
 			}))
+			defer srv.Close()
 
 			_ = vocab.OnIntransitiveActivity(tt.toSend, func(act *vocab.IntransitiveActivity) error {
 				act.Actor = mockActor(vocab.IRI(srv.URL), name)
@@ -1541,6 +1554,7 @@ func TestC_ToInbox(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write(raw)
 			}))
+			defer srv.Close()
 
 			_ = vocab.OnIntransitiveActivity(tt.toSend, func(act *vocab.IntransitiveActivity) error {
 				act.Actor = mockActor(vocab.IRI(srv.URL), name)

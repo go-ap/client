@@ -58,6 +58,8 @@ func ExampleTransport_RoundTrip_draft() {
 		fmt.Printf("%s\n", r.Header.Get("Signature"))
 		w.WriteHeader(http.StatusOK)
 	}))
+	defer srv.Close()
+
 	tr := New(WithTransport(http.DefaultTransport), WithActor(actorFn, prv), NoRFC9421)
 
 	// The below functionality would be equivalent to the following usage:
@@ -90,6 +92,8 @@ func ExampleTransport_RoundTrip_rfc9421() {
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
+	defer srv.Close()
+
 	tr := New(WithTransport(http.DefaultTransport), WithActor(actorFn, prv), WithNonce(sameNonce))
 	req := httptest.NewRequest(http.MethodPost, srv.URL, nil)
 	req.Header.Set("Date", millenium.Format(http.TimeFormat))

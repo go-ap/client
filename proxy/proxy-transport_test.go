@@ -175,9 +175,11 @@ func TestTransport_RoundTrip(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
+	defer srv.Close()
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
+	defer proxy.Close()
 	type fields struct {
 		Base     http.RoundTripper
 		ProxyURL vocab.IRI

@@ -62,6 +62,7 @@ func TestTransport_RoundTrip(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			where := t.TempDir()
 			server := httptest.NewServer(sameBodyHandler(t, tt.body, tt.resp))
+			defer server.Close()
 
 			dt := Transport{Base: http.DefaultTransport, where: where}
 			var req *http.Request
