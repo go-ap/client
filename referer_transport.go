@@ -3,13 +3,13 @@ package client
 import "net/http"
 
 type uaTransport struct {
-	Base http.RoundTripper
 	ua   string
+	Base http.RoundTripper
 }
 
 func UserAgentTransport(ua string, wrap http.RoundTripper) http.RoundTripper {
 	if wrap == nil {
-		wrap = defaultTransport
+		return defaultTransport
 	}
 	return uaTransport{Base: wrap, ua: ua}
 }
