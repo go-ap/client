@@ -263,14 +263,7 @@ func OAuth2Client(ctx context.Context, c *C2S) *http.Client {
 	//  * the cache transport needs to be used on fetches
 	//  * the OAuth2 transport needs to be used on writes
 	if c != nil {
-		if tok := c.Token(); tok != nil {
-			httpC.Transport = c.Config().Client(ctx, tok).Transport
-		}
-		// NOTE(marius): if the C2S client actor has a ProxyURL endpoint,
-		// we can use that for requests to other servers.
-		if !vocab.EmptyIRI.Equal(c.ProxyURL) {
-			httpC.Transport = proxy.New(proxy.WithTransport(httpC.Transport), proxy.WithProxyURL(c.ProxyURL))
-		}
+		httpC.Transport = c.Transport(ctx)
 	}
 
 	return httpC

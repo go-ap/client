@@ -45,23 +45,16 @@ const (
 	ContentTypeActivityJson = `application/activity+json`
 )
 
-var (
-	// defaultLogger is a nil logging function that is set as default.
-	defaultLogger LogFn = func(s string, el ...interface{}) {}
-
-	// defaultCtxLogger is the nil context logging function that is set as default.
-	defaultCtxLogger CtxLogFn = func(ctx ...Ctx) LogFn { return defaultLogger }
-)
+// defaultLogger is a nil logging function that is set as default.
+var defaultLogger = lw.Nil()
 
 type httpClient interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
 type C struct {
-	c      httpClient
-	l      lw.Logger
-	infoFn CtxLogFn
-	errFn  CtxLogFn
+	c httpClient
+	l lw.Logger
 }
 
 // WithHTTPClient sets the http client
@@ -75,14 +68,6 @@ func WithHTTPClient(h *http.Client) OptionFn {
 func WithLogger(l lw.Logger) OptionFn {
 	return func(c *C) error {
 		c.l = l
-		if l != nil {
-			c.infoFn = func(ctx ...Ctx) LogFn {
-				return l.WithContext(ctx...).Debugf
-			}
-			c.errFn = func(ctx ...Ctx) LogFn {
-				return l.WithContext(ctx...).Warnf
-			}
-		}
 		return nil
 	}
 }
@@ -154,11 +139,7 @@ func cachedTransport(t http.RoundTripper) http.RoundTripper {
 }
 
 func New(o ...OptionFn) *C {
-	c := &C{
-		c:      defaultClient,
-		infoFn: defaultCtxLogger,
-		errFn:  defaultCtxLogger,
-	}
+	c := &C{c: defaultClient, l: defaultLogger}
 	for _, fn := range o {
 		_ = fn(c)
 	}
@@ -179,30 +160,35 @@ func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 
 	var resp *http.Response
 	if resp, err = c.CtxGet(ctx, id.String()); err != nil {
-		c.errFn(errCtx)("Error: %s", err)
+		c.l.WithContext(errCtx, Ctx{"err": err}).Errorf("failed to load IRI")
 		return obj, err
 	}
 	if resp == nil {
 		err := errf("unable to load from the ActivityPub end point: nil response").iri(id)
-		c.errFn(errCtx, Ctx{"duration": time.Now().Sub(st)})("Error: %s", err)
+		c.l.WithContext(errCtx, Ctx{"duration": time.Now().Sub(st)}).Errorf("Error: %s", err)
 		return obj, err
 	}
 	// NOTE(marius): here we might want to group the Close with a Flush of the
 	// Body using io.Copy(ioutil.Discard, resp.Body)
 	defer resp.Body.Close()
 
+	errCtx["duration"] = time.Now().Sub(st)
+	errCtx["status"] = resp.StatusCode
+	//errCtx["headers"] = resp.Header
+	//errCtx["proto"] = resp.Proto
+
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusGone {
 		err := errf("unable to load from the ActivityPub end point") //.status(resp.StatusCode).iri(id)
-		c.errFn(errCtx, Ctx{"duration": time.Now().Sub(st)}, Ctx{"status": resp.Status, "headers": resp.Header, "proto": resp.Proto})("Error: %s", err)
+		c.l.WithContext(errCtx, Ctx{"err": err}).Errorf("error response received")
 		return obj, err
 	}
 
 	var body []byte
 	if body, err = io.ReadAll(resp.Body); err != nil {
-		c.errFn(errCtx, Ctx{"duration": time.Now().Sub(st)}, Ctx{"status": resp.Status, "headers": resp.Header, "proto": resp.Proto})("Error: %s", err)
+		c.l.WithContext(errCtx, Ctx{"err": err}).Errorf("unable to read response body")
 		return obj, err
 	}
-	c.infoFn(errCtx, Ctx{"duration": time.Now().Sub(st), "status": resp.Status})("OK")
+	c.l.WithContext(errCtx).Infof("OK")
 
 	it, err := vocab.UnmarshalJSON(body)
 	if err != nil {
@@ -236,19 +222,6 @@ func (c C) CtxLoadIRI(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 // LoadIRI tries to dereference an IRI and load the full ActivityPub object it represents
 func (c C) LoadIRI(id vocab.IRI) (vocab.Item, error) {
 	return c.loadCtx(context.Background(), id)
-}
-
-func (c C) log(err error) CtxLogFn {
-	var logFn CtxLogFn
-	if err != nil {
-		logFn = func(ctx ...Ctx) LogFn {
-			ctx = append(ctx, Ctx{"err": err})
-			return c.errFn(ctx...)
-		}
-	} else {
-		logFn = c.infoFn
-	}
-	return logFn
 }
 
 func (c *C) req(ctx context.Context, method string, url, contentType string, body io.Reader) (*http.Request, error) {
@@ -359,7 +332,7 @@ func (c C) toCollection(ctx context.Context, act vocab.Item, colIRI vocab.IRI) (
 	defer resp.Body.Close()
 	resBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		c.errFn(Ctx{"iri": colIRI, "status": resp.Status})(err.Error())
+		c.l.WithContext(Ctx{"iri": colIRI, "status": resp.Status, "err": err}).Errorf("failed to read response body")
 		return resultIRI, nil, err
 	}
 	if len(resBody) == 0 {

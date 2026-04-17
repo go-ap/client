@@ -583,10 +583,8 @@ func TestC_Collection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := C{
-				c:      defaultClient,
-				l:      lw.Dev(lw.SetOutput(t.Output())),
-				infoFn: ctxLogFn(t),
-				errFn:  ctxLogFn(t),
+				c: defaultClient,
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -666,10 +664,8 @@ func TestC_Inbox(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := C{
-				c:      defaultClient,
-				l:      lw.Dev(lw.SetOutput(t.Output())),
-				infoFn: ctxLogFn(t),
-				errFn:  ctxLogFn(t),
+				c: defaultClient,
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -806,10 +802,8 @@ func TestC_Outbox(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := C{
-				c:      defaultClient,
-				l:      lw.Dev(lw.SetOutput(t.Output())),
-				infoFn: ctxLogFn(t),
-				errFn:  ctxLogFn(t),
+				c: defaultClient,
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -869,10 +863,8 @@ func TestC_Followers(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := C{
-				c:      defaultClient,
-				l:      lw.Dev(lw.SetOutput(t.Output())),
-				infoFn: ctxLogFn(t),
-				errFn:  ctxLogFn(t),
+				c: defaultClient,
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -932,10 +924,8 @@ func TestC_Following(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := C{
-				c:      defaultClient,
-				l:      lw.Dev(lw.SetOutput(t.Output())),
-				infoFn: ctxLogFn(t),
-				errFn:  ctxLogFn(t),
+				c: defaultClient,
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -995,10 +985,8 @@ func TestC_Liked(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := C{
-				c:      defaultClient,
-				l:      lw.Dev(lw.SetOutput(t.Output())),
-				infoFn: ctxLogFn(t),
-				errFn:  ctxLogFn(t),
+				c: defaultClient,
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1058,10 +1046,8 @@ func TestC_Likes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := C{
-				c:      defaultClient,
-				l:      lw.Dev(lw.SetOutput(t.Output())),
-				infoFn: ctxLogFn(t),
-				errFn:  ctxLogFn(t),
+				c: defaultClient,
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1121,10 +1107,8 @@ func TestC_Shares(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := C{
-				c:      defaultClient,
-				l:      lw.Dev(lw.SetOutput(t.Output())),
-				infoFn: ctxLogFn(t),
-				errFn:  ctxLogFn(t),
+				c: defaultClient,
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1184,10 +1168,8 @@ func TestC_Replies(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := C{
-				c:      defaultClient,
-				l:      lw.Dev(lw.SetOutput(t.Output())),
-				infoFn: ctxLogFn(t),
-				errFn:  ctxLogFn(t),
+				c: defaultClient,
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1247,10 +1229,8 @@ func TestC_Actor(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := C{
-				c:      defaultClient,
-				l:      lw.Dev(lw.SetOutput(t.Output())),
-				infoFn: ctxLogFn(t),
-				errFn:  ctxLogFn(t),
+				c: defaultClient,
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1313,10 +1293,8 @@ func TestC_Object(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := C{
-				c:      defaultClient,
-				l:      lw.Dev(lw.SetOutput(t.Output())),
-				infoFn: ctxLogFn(t),
-				errFn:  ctxLogFn(t),
+				c: defaultClient,
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1389,10 +1367,8 @@ func TestC_Activity(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := C{
-				c:      defaultClient,
-				l:      lw.Dev(lw.SetOutput(t.Output())),
-				infoFn: ctxLogFn(t),
-				errFn:  ctxLogFn(t),
+				c: defaultClient,
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1472,10 +1448,8 @@ func TestC_ToOutbox(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := C{
-				c:      defaultClient,
-				l:      lw.Dev(lw.SetOutput(t.Output())),
-				infoFn: ctxLogFn(t),
-				errFn:  ctxLogFn(t),
+				c: defaultClient,
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 			ctx := context.Background()
 
@@ -1537,10 +1511,8 @@ func TestC_ToInbox(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := C{
-				c:      defaultClient,
-				l:      lw.Dev(lw.SetOutput(t.Output())),
-				infoFn: ctxLogFn(t),
-				errFn:  ctxLogFn(t),
+				c: defaultClient,
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 			ctx := context.Background()
 

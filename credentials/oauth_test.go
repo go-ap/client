@@ -14,6 +14,7 @@ import (
 	"time"
 
 	vocab "github.com/go-ap/activitypub"
+	"github.com/go-ap/client/proxy"
 	"github.com/go-ap/errors"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -667,3 +668,151 @@ func Test_handleCallback(t *testing.T) {
 		})
 	}
 }
+
+func TestOAuth2Client1(t *testing.T) {
+	mockConfig := oauth2.Config{}
+	mockToken := oauth2.Token{
+		AccessToken:  "ggg",
+		TokenType:    "Bear",
+		RefreshToken: "rrr",
+	}
+	type args struct {
+		ctx context.Context
+		c   *C2S
+	}
+	tests := []struct {
+		name string
+		args args
+		want *http.Client
+	}{
+		{
+			name: "empty",
+			args: args{},
+			want: &http.Client{},
+		},
+		{
+			name: "from context",
+			args: args{
+				ctx: context.WithValue(context.Background(), oauth2.HTTPClient, &http.Client{Timeout: 666 * time.Millisecond}),
+				c:   nil,
+			},
+			want: &http.Client{Timeout: 666 * time.Millisecond},
+		},
+		{
+			name: "direct oauth2",
+			args: args{
+				ctx: context.Background(),
+				c: &C2S{
+					IRI:  "http://example.com",
+					Conf: mockConfig,
+					Tok:  &mockToken,
+				},
+			},
+			want: &http.Client{
+				Transport: &oauth2.Transport{
+					Source: mockConfig.TokenSource(context.Background(), &mockToken),
+				},
+			},
+		},
+		{
+			name: "with proxy url",
+			args: args{
+				ctx: context.Background(),
+				c: &C2S{
+					IRI:      "http://example.com",
+					Conf:     mockConfig,
+					Tok:      &mockToken,
+					ProxyURL: "http://example.com/proxy",
+				},
+			},
+			want: &http.Client{
+				Transport: &proxy.Transport{
+					Base: &oauth2.Transport{
+						Source: mockConfig.TokenSource(context.Background(), &mockToken),
+					},
+					ProxyURL: "http://example.com/proxy",
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := OAuth2Client(tt.args.ctx, tt.args.c); !cmp.Equal(got, tt.want, ignoreTokenSource) {
+				t.Errorf("OAuth2Client() = %s", cmp.Diff(tt.want, got, ignoreTokenSource))
+			}
+		})
+	}
+}
+
+func TestC2S_Transport1(t *testing.T) {
+	mockConfig := oauth2.Config{}
+	mockToken := oauth2.Token{
+		AccessToken:  "ggg",
+		TokenType:    "bear",
+		RefreshToken: "rrr",
+	}
+	type fields struct {
+		IRI      vocab.IRI
+		Conf     oauth2.Config
+		Tok      *oauth2.Token
+		ProxyURL vocab.IRI
+	}
+	type args struct {
+		ctx context.Context
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		want   http.RoundTripper
+	}{
+		{
+			name:   "empty",
+			fields: fields{},
+			args:   args{},
+			want:   &http.Transport{},
+		},
+		{
+			name: "empty",
+			fields: fields{
+				Tok: &mockToken,
+			},
+			args: args{},
+			want: mockConfig.Client(context.Background(), &mockToken).Transport,
+		},
+		{
+			name: "with proxy url",
+			fields: fields{
+				IRI:      "http://example.com",
+				Conf:     mockConfig,
+				Tok:      &mockToken,
+				ProxyURL: "http://example.com/proxy",
+			},
+			args: args{
+				ctx: context.Background(),
+			},
+			want: &proxy.Transport{
+				Base: &oauth2.Transport{
+					Source: mockConfig.TokenSource(context.Background(), &mockToken),
+				},
+				ProxyURL: "http://example.com/proxy",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &C2S{
+				IRI:      tt.fields.IRI,
+				Conf:     tt.fields.Conf,
+				Tok:      tt.fields.Tok,
+				ProxyURL: tt.fields.ProxyURL,
+			}
+			if got := c.Transport(tt.args.ctx); !cmp.Equal(got, tt.want, ignoreTokenSource, ignoredTransports) {
+				t.Errorf("Transport() = %s", cmp.Diff(tt.want, got, ignoreTokenSource, ignoredTransports))
+			}
+		})
+	}
+}
+
+var ignoreTokenSource = cmpopts.IgnoreInterfaces(struct{ oauth2.TokenSource }{})
+var ignoredTransports = cmpopts.IgnoreUnexported(http.Transport{})

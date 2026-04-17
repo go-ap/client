@@ -302,15 +302,6 @@ func TestWithLogger(t *testing.T) {
 			if !cmp.Equal(cl.l, tt.l) {
 				t.Errorf("WithLogger() = %s", cmp.Diff(tt.l, cl.l))
 			}
-
-			if tt.l != nil {
-				if cl.infoFn == nil {
-					t.Errorf("WithLogger() C.infoFn should not be nil, when logger is present")
-				}
-				if cl.errFn == nil {
-					t.Errorf("WithLogger() C.errFn should not be nil, when logger is present")
-				}
-			}
 		})
 	}
 }
@@ -431,10 +422,8 @@ func TestC_ToCollection(t *testing.T) {
 			}
 
 			c := C{
-				c:      tt.client,
-				l:      lw.Dev(lw.SetOutput(t.Output())),
-				infoFn: ctxLogFn(t),
-				errFn:  ctxLogFn(t),
+				c: tt.client,
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
 			gotIRI, gotIt, err := c.ToCollection(tt.args.toSend, toCollections...)
@@ -557,10 +546,8 @@ func TestC_toCollection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := C{
-				c:      tt.client,
-				l:      lw.Dev(lw.SetOutput(t.Output())),
-				infoFn: ctxLogFn(t),
-				errFn:  ctxLogFn(t),
+				c: tt.client,
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
 			var colIRI vocab.IRI
