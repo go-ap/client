@@ -60,11 +60,11 @@ func normalizeActorIRI(i vocab.IRI) (vocab.IRI, error) {
 	}
 	ur, err := actorIRI.URL()
 	if err != nil {
-		return i, errors.Newf("invalid actor URL: %s", err)
+		return i, err
 	}
 	if ur.Host == "" {
 		actorIRI = i
-		err = errors.Newf("invalid actor URL")
+		err = errors.Newf("actor URL is missing host")
 	}
 	return actorIRI, err
 }
@@ -72,7 +72,7 @@ func normalizeActorIRI(i vocab.IRI) (vocab.IRI, error) {
 func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, error) {
 	actorIRI, err := normalizeActorIRI(vocab.IRI(actorURL))
 	if err != nil {
-		return nil, errors.Newf("invalid actor URL: %s", err)
+		return nil, errors.Annotatef(err, "invalid actor URL")
 	}
 	if ctx.Value(oauth2.HTTPClient) == nil {
 		transport := client.UserAgentTransport(auth.UserAgent, cache.Private(http.DefaultTransport, cache.Mem(MByte)))

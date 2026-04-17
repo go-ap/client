@@ -393,7 +393,7 @@ func Test_normalizeActorURL(t *testing.T) {
 			name:     "empty",
 			actorURL: "",
 			want:     "",
-			wantErr:  errors.Newf("invalid actor URL: empty IRI"),
+			wantErr:  errors.Newf("empty IRI"),
 		},
 		{
 			name:     "no proto",
@@ -814,5 +814,132 @@ func TestC2S_Transport1(t *testing.T) {
 	}
 }
 
+var ignoreOAuth2Config = cmpopts.IgnoreUnexported(oauth2.Config{})
 var ignoreTokenSource = cmpopts.IgnoreInterfaces(struct{ oauth2.TokenSource }{})
 var ignoredTransports = cmpopts.IgnoreUnexported(http.Transport{})
+
+func TestAuthorize(t *testing.T) {
+	mockActor := vocab.Actor{
+		ID:   "http://example.com/~jdoe",
+		Type: vocab.PersonType,
+		PublicKey: vocab.PublicKey{
+			ID:    "http://example.com/~jdoe#main",
+			Owner: "http://example.com/~jdoe",
+		},
+		PreferredUsername: vocab.DefaultNaturalLanguage("jdoe"),
+	}
+	type args struct {
+		ctx      context.Context
+		actorURL string
+		auth     ClientConfig
+	}
+	tests := []struct {
+		name      string
+		args      args
+		handlerFn http.HandlerFunc
+		want      *C2S
+		wantErr   error
+	}{
+		{
+			name:    "empty",
+			args:    args{},
+			want:    nil,
+			wantErr: errors.Annotatef(errors.Newf("empty IRI"), "invalid actor URL"),
+		},
+		{
+			name: "nil body",
+			args: args{
+				ctx:      context.Background(),
+				actorURL: "http://example.com/~jdoe",
+				auth:     ClientConfig{},
+			},
+			handlerFn: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			},
+			wantErr: errors.Annotatef(
+				errors.Annotatef(errors.NotImplementedf("not a document and not an error"), "invalid response from ActivityPub server"),
+				"unable to load actor",
+			),
+		},
+		{
+			name: "no OAuth2 endpoints",
+			args: args{
+				ctx:      context.Background(),
+				actorURL: "http://example.com/~jdoe",
+				auth:     ClientConfig{},
+			},
+			handlerFn: func(w http.ResponseWriter, r *http.Request) {
+				raw, _ := vocab.MarshalJSON(mockActor)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(raw)
+			},
+			wantErr: errors.Newf("the Actor has no OAuth2 endpoints exposed"),
+		},
+		{
+			name: "no ID",
+			args: args{
+				ctx:      context.Background(),
+				actorURL: "http://example.com/~jdoe",
+				auth:     ClientConfig{},
+			},
+			handlerFn: func(w http.ResponseWriter, r *http.Request) {
+				act := mockActor
+				act.ID = vocab.EmptyIRI
+				raw, _ := vocab.MarshalJSON(act)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(raw)
+			},
+			wantErr: errors.Newf("unable to load OAuth2 client application actor"),
+		},
+		{
+			name: "OAuth2 with endpoints",
+			args: args{
+				ctx:      context.Background(),
+				actorURL: "http://example.com/~jdoe",
+				auth:     ClientConfig{},
+			},
+			handlerFn: func(w http.ResponseWriter, r *http.Request) {
+				act := mockActor
+				act.Endpoints = &vocab.Endpoints{
+					OauthAuthorizationEndpoint: act.ID.AddPath("auth"),
+					OauthTokenEndpoint:         act.ID.AddPath("tok"),
+				}
+				raw, _ := vocab.MarshalJSON(act)
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(raw)
+			},
+			want: &C2S{
+				IRI: "http://example.com/~jdoe",
+				Conf: oauth2.Config{
+					Endpoint: oauth2.Endpoint{
+						AuthURL:  "http://example.com/~jdoe/auth",
+						TokenURL: "http://example.com/~jdoe/tok",
+					},
+					RedirectURL: "http://" + LocalInterfaceAddress + ":" + strconv.Itoa(RandPort),
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(tt.handlerFn)
+			if tt.args.actorURL != "" {
+				u, err := url.Parse(tt.args.actorURL)
+				if err == nil {
+					su, _ := url.Parse(srv.URL)
+					u.Host = su.Host
+					tt.args.actorURL = u.String()
+				}
+			}
+
+			got, err := Authorize(tt.args.ctx, tt.args.actorURL, tt.args.auth)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("Authorize() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+				return
+			}
+			if !cmp.Equal(got, tt.want, ignoreTokenSource, ignoreOAuth2Config) {
+				t.Errorf("Authorize() got = %s", cmp.Diff(tt.want, got, ignoreTokenSource, ignoreOAuth2Config))
+			}
+		})
+	}
+}
