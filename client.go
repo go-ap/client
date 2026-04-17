@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -141,7 +142,10 @@ func cachedTransport(t http.RoundTripper) http.RoundTripper {
 func New(o ...OptionFn) *C {
 	c := &C{c: defaultClient, l: defaultLogger}
 	for _, fn := range o {
-		_ = fn(c)
+		err := fn(c)
+		if err != nil {
+			defaultLogger.WithContext(lw.Ctx{"opt": fmt.Sprintf("%T", fn), "err": err}).Errorf("failed option call")
+		}
 	}
 	return c
 }
