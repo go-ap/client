@@ -464,6 +464,133 @@ func Test_getActorOAuthEndpoint(t *testing.T) {
 	}
 }
 
+func Test_waitForOAuth2Callback(t *testing.T) {
+	tests := []struct {
+		name         string
+		state        string
+		codeVerifier string
+		params       url.Values
+		handlerFn    http.HandlerFunc
+		want         *oauth2.Token
+		wantErr      error
+	}{
+		{
+			name: "empty",
+			handlerFn: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			},
+			wantErr: errors.Annotatef(context.DeadlineExceeded, "unable to authorize, reached timeout"),
+		},
+		{
+			name:         "valid",
+			state:        "OK",
+			codeVerifier: "test-verif",
+			params:       url.Values{"state": []string{"OK"}, "code": []string{"g00d"}},
+			want: &oauth2.Token{
+				AccessToken:  "test",
+				TokenType:    "Bearer",
+				RefreshToken: "ref",
+			},
+		},
+	}
+
+	// NOTE(marius): to avoid calling xdg-open in openbrowser()
+	_ = os.Setenv(testingEnvVariable, "1")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancelFn := context.WithTimeout(context.Background(), time.Second)
+			defer cancelFn()
+
+			conf := oauth2.Config{
+				ClientID:     "test-client",
+				ClientSecret: "no-s3cr3t",
+				RedirectURL:  "http://" + LocalInterfaceAddress + ":" + strconv.Itoa(RandPort),
+				Scopes:       []string{"s1", "s2"},
+			}
+			if tt.handlerFn == nil {
+				tt.handlerFn = func(w http.ResponseWriter, r *http.Request) {
+					if r.URL.Path == "/tok" {
+						_ = r.ParseForm()
+						vals := r.Form
+						// code=g00d&code_verifier=test-verif&grant_type=authorization_code&redirect_uri=http://127.0.0.1:1434
+						if code := vals.Get("code"); code != tt.params.Get("code") {
+							t.Errorf("OAuth2 token code %s, expected %s", code, tt.params.Get("code"))
+						}
+						if verif := vals.Get("code_verifier"); verif != tt.codeVerifier {
+							t.Errorf("OAuth2 token code_verifier %s, expected %s", verif, tt.codeVerifier)
+						}
+						if grant := vals.Get("grant_type"); grant != "authorization_code" {
+							t.Errorf("OAuth2 token code_verifier %s, expected %s", grant, "authorization_code")
+						}
+						redirectURI := vals.Get("redirect_uri")
+						if redirectURI == "" {
+							t.Errorf("OAuth2 token redirect_uri")
+						}
+						result := url.Values{
+							"access_token":  []string{tt.want.AccessToken},
+							"token_type":    []string{tt.want.TokenType},
+							"refresh_token": []string{tt.want.RefreshToken},
+						}
+						w.WriteHeader(http.StatusOK)
+						_, _ = w.Write([]byte(result.Encode()))
+					} else if r.URL.Path == "/auth" {
+						vals := r.URL.Query()
+						if clientID := vals.Get("client_id"); clientID != conf.ClientID {
+							t.Errorf("OAuth2 authorization URL client_id %s, expected %s", clientID, conf.ClientID)
+						}
+						if vals.Get("code_challenge") == "" {
+							t.Errorf("OAuth2 authorization URL is missing code_challenge")
+						}
+						if codeMethod := vals.Get("code_challenge_method"); codeMethod != "S256" {
+							t.Errorf("OAuth2 authorization URL code_challenge_method %s, expected %s", codeMethod, "S256")
+						}
+						if respType := vals.Get("response_type"); respType != "code" {
+							t.Errorf("OAuth2 authorization URL response_type %s, expected %s", respType, "code")
+						}
+						state := vals.Get("state")
+						if state != tt.params.Get("state") {
+							t.Errorf("OAuth2 authorization URL state %s, expected %s", state, tt.params.Get("state"))
+						}
+						redirectURI := vals.Get("redirect_uri")
+						if redirectURI == "" {
+							t.Errorf("OAuth2 authorization URL is missing redirect_uri")
+						}
+						w.Header().Add("Location", redirectURI+"?"+tt.params.Encode())
+						w.WriteHeader(http.StatusSeeOther)
+					}
+				}
+			}
+
+			srv := httptest.NewServer(tt.handlerFn)
+
+			conf.Endpoint = oauth2.Endpoint{
+				AuthURL:  srv.URL + "/auth",
+				TokenURL: srv.URL + "/tok",
+			}
+
+			opts := make([]oauth2.AuthCodeOption, 0)
+			if tt.codeVerifier != "" {
+				opts = append(opts, oauth2.S256ChallengeOption(tt.codeVerifier))
+			}
+
+			go func() {
+				_, _ = http.Get(conf.AuthCodeURL(tt.state, opts...))
+			}()
+
+			got, err := waitForOAuth2Callback(ctx, &conf, tt.state, tt.codeVerifier)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("handleOAuth2Flow() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+				return
+			}
+			if !cmp.Equal(got, tt.want, cmpopts.IgnoreUnexported(oauth2.Token{})) {
+				t.Errorf("handleOAuth2Flow() got = %s", cmp.Diff(tt.want, got, cmpopts.IgnoreUnexported(oauth2.Token{})))
+			}
+			cancelFn()
+		})
+	}
+}
+
 func Test_handleCallback(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -537,66 +664,6 @@ func Test_handleCallback(t *testing.T) {
 			if cbRes.tok != tt.wantTok {
 				t.Errorf("handleCallback() tok = %v, want %v", cbRes.tok, tt.wantTok)
 			}
-		})
-	}
-}
-
-func Test_handleOAuth2Flow(t *testing.T) {
-	tests := []struct {
-		name    string
-		params  url.Values
-		want    *oauth2.Token
-		wantErr error
-	}{
-		{
-			name:    "empty",
-			wantErr: errors.Annotatef(context.DeadlineExceeded, "unable to authorize, reached timeout"),
-		},
-		//{
-		//	name:   "valid",
-		//	params: url.Values{"state": []string{"OK"}, "code": []string{"g00d"}},
-		//	want: &oauth2.Token{
-		//		AccessToken:  "test",
-		//		TokenType:    "Bearer",
-		//		RefreshToken: "ref",
-		//	},
-		//},
-	}
-	// NOTE(marius): to avoid calling xdg-open in openbrowser()
-	_ = os.Setenv(testingEnvVariable, "1")
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx, cancelFn := context.WithTimeout(context.Background(), time.Second)
-
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Add("Location", "http://"+LocalInterfaceAddress+":"+strconv.Itoa(RandPort)+"?"+tt.params.Encode())
-				w.WriteHeader(http.StatusSeeOther)
-
-				cancelFn()
-			}))
-
-			// ?client_id=&code_challenge=7_rCPj49TXNag-HvBC0VajFFg54CGkyD5C8OD-_m2cU&code_challenge_method=S256&response_type=code&state=IYQ4DMBFMAOPKK22XC7HXLDZP7
-			conf := oauth2.Config{
-				ClientID:     "test-client",
-				ClientSecret: "no-s3cr3t",
-				Endpoint: oauth2.Endpoint{
-					AuthURL:  srv.URL + "/auth",
-					TokenURL: srv.URL + "/tok",
-				},
-				RedirectURL: "http://" + LocalInterfaceAddress + ":" + strconv.Itoa(RandPort),
-				Scopes:      []string{"s1", "s2"},
-			}
-
-			got, err := handleOAuth2Flow(ctx, &conf)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("handleOAuth2Flow() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
-				return
-			}
-			if !cmp.Equal(got, tt.want, cmpopts.IgnoreUnexported(oauth2.Token{})) {
-				t.Errorf("handleOAuth2Flow() got = %s", cmp.Diff(tt.want, got, cmpopts.IgnoreUnexported(oauth2.Token{})))
-			}
-			cancelFn()
 		})
 	}
 }

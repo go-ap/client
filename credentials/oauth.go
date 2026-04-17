@@ -138,7 +138,17 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 	// NOTE(marius): if we support an interactive session, we try to authenticate through the browser.
 	if app.Tok == nil && auth.Interactive {
 		// NOTE(marius): For all Person actors, or a failed password credentials flow, we try  an authorization flow.
-		tok, err := handleOAuth2Flow(ctx, &app.Conf)
+		state := rand.Text()
+
+		codeVerifier := CodeVerifier()
+		authURL := app.Config().AuthCodeURL(state, oauth2.S256ChallengeOption(codeVerifier))
+		if err := openbrowser(authURL); err != nil {
+			slog.With(slog.String("err", err.Error())).Warn("Unable to open browser window.")
+			slog.With(slog.String("url", authURL)).Info("Please manually open the authorization URL in your browser.")
+		} else {
+			fmt.Printf("Opened browser window for authorization: %s.\n", authURL)
+		}
+		tok, err := waitForOAuth2Callback(ctx, &app.Conf, state, codeVerifier)
 		if err != nil {
 			return nil, err
 		}
@@ -354,23 +364,12 @@ func handleCallback(callbackCh chan callbackResponse, state string) http.Handler
 	}
 }
 
-func handleOAuth2Flow(ctx context.Context, app *oauth2.Config) (*oauth2.Token, error) {
-	state := rand.Text()
-
-	codeVerifier := CodeVerifier()
-	authURL := app.AuthCodeURL(state, oauth2.S256ChallengeOption(codeVerifier))
-	if err := openbrowser(authURL); err != nil {
-		slog.With(slog.String("err", err.Error())).Warn("Unable to open browser window.")
-		slog.With(slog.String("url", authURL)).Info("Please manually open the authorization URL in your browser.")
-	} else {
-		fmt.Printf("Opened browser window for authorization: %s.\n", authURL)
-	}
-
+func waitForOAuth2Callback(ctx context.Context, app *oauth2.Config, state, codeVerifier string) (*oauth2.Token, error) {
 	// NOTE(marius) The clients are using the 127.0.0.1 IP verbatim which allows for wildcard port number when the
 	// authorization server validates the return URL.
 	//
 	// See: https://www.rfc-editor.org/rfc/rfc8252#section-7.3
-	l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", LocalInterfaceAddress, RandPort))
+	l, err := net.Listen("tcp", LocalInterfaceAddress+":"+strconv.Itoa(RandPort))
 	if err != nil {
 		return nil, err
 	}
