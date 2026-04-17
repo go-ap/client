@@ -207,7 +207,7 @@ func validateIRIForRequest(i vocab.IRI) error {
 	return nil
 }
 
-func rawFilterQuery(f ...filters.Check) string {
+func FilterQueryString(f ...filters.Check) string {
 	if len(f) == 0 {
 		return ""
 	}
@@ -252,7 +252,7 @@ func (c C) collection(ctx context.Context, i vocab.IRI) (vocab.CollectionInterfa
 }
 
 func irif(i vocab.IRI, f ...filters.Check) vocab.IRI {
-	return vocab.IRI(string(i) + rawFilterQuery(f...))
+	return vocab.IRI(string(i) + FilterQueryString(f...))
 }
 
 func inbox(a vocab.Item, f ...filters.Check) vocab.IRI {

@@ -557,7 +557,10 @@ func Test_waitForOAuth2Callback(t *testing.T) {
 						if redirectURI == "" {
 							t.Errorf("OAuth2 authorization URL is missing redirect_uri")
 						}
-						w.Header().Add("Location", redirectURI+"?"+tt.params.Encode())
+						if len(tt.params) > 0 {
+							redirectURI = redirectURI + "?" + tt.params.Encode()
+						}
+						w.Header().Add("Location", redirectURI)
 						w.WriteHeader(http.StatusSeeOther)
 					}
 				}
