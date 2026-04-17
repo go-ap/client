@@ -360,13 +360,16 @@ func (c C) CtxToCollection(ctx context.Context, a vocab.Item, url ...vocab.IRI) 
 	return c.toCollections(ctx, a, url...)
 }
 
-func HTTPClient(c *C) *http.Client {
+func HTTPClient(c httpClient) *http.Client {
 	if c == nil {
 		return nil
 	}
-	switch httpC := c.c.(type) {
+	switch httpC := c.(type) {
 	case *C:
-		return HTTPClient(httpC)
+		if httpC == nil {
+			return nil
+		}
+		return HTTPClient(httpC.c)
 	case *http.Client:
 		return httpC
 	default:
