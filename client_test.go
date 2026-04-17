@@ -6,7 +6,9 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 	"unsafe"
@@ -22,7 +24,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
-func TestClient_LoadIRI(t *testing.T) {
+func TestClient_LoadIRI1(t *testing.T) {
 	empty := vocab.IRI("")
 	c := New()
 
@@ -39,26 +41,6 @@ func TestClient_LoadIRI(t *testing.T) {
 	} else {
 		t.Logf("Valid error received: %s", err)
 	}
-}
-
-func TestClient_Get(t *testing.T) {
-	t.Skipf("TODO")
-}
-
-func TestClient_Head(t *testing.T) {
-	t.Skipf("TODO")
-}
-
-func TestClient_Post(t *testing.T) {
-	t.Skipf("TODO")
-}
-
-func TestClient_Put(t *testing.T) {
-	t.Skipf("TODO")
-}
-
-func TestClient_Delete(t *testing.T) {
-	t.Skipf("TODO")
 }
 
 func Test_getTransportWithTLSValidation(t *testing.T) {
@@ -229,8 +211,8 @@ func TestSkipTLSValidation(t *testing.T) {
 
 			optionFn := SkipTLSValidation(tt.skip)
 			err := optionFn(cl)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("SkipTLSValidation() = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors("")) {
+				t.Errorf("SkipTLSValidation() = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors("")))
 			}
 
 			switch tr := cl.c.(*http.Client).Transport.(type) {
@@ -249,16 +231,22 @@ func areErrors(a, b any) bool {
 	return ok1 && ok2
 }
 
-func compareErrors(x, y any) bool {
-	xe := x.(error)
-	ye := y.(error)
-	if errors.Is(xe, ye) || errors.Is(ye, xe) {
-		return true
+func compareErrorsWithUrl(url string) func(x, y any) bool {
+	return func(x, y any) bool {
+		xe := x.(error)
+		ye := y.(error)
+		if errors.Is(xe, ye) || errors.Is(ye, xe) {
+			return true
+		}
+		xs := strings.ReplaceAll(xe.Error(), ": "+url, "")
+		ys := strings.ReplaceAll(ye.Error(), ": "+url, "")
+		return xs == ys
 	}
-	return xe.Error() == ye.Error()
 }
 
-var EquateWeakErrors = cmp.FilterValues(areErrors, cmp.Comparer(compareErrors))
+var EquateWeakErrors = func(url string) cmp.Option {
+	return cmp.FilterValues(areErrors, cmp.Comparer(compareErrorsWithUrl(url)))
+}
 
 func areFuncs(a, b any) bool {
 	ta := reflect.TypeOf(a)
@@ -296,8 +284,8 @@ func TestWithLogger(t *testing.T) {
 			cl := new(C)
 			optionFn := WithLogger(tt.l)
 			err := optionFn(cl)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("WithLogger() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors("")) {
+				t.Errorf("WithLogger() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors("")))
 			}
 			if !cmp.Equal(cl.l, tt.l) {
 				t.Errorf("WithLogger() = %s", cmp.Diff(tt.l, cl.l))
@@ -328,8 +316,8 @@ func TestWithHTTPClient(t *testing.T) {
 			cl := new(C)
 			optionFn := WithHTTPClient(tt.h)
 			err := optionFn(cl)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("WithHTTPClient() = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors("")) {
+				t.Errorf("WithHTTPClient() = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors("")))
 			}
 			if !cmp.Equal(cl.c, tt.h, ignoredTransports, equateFuncs) {
 				t.Errorf("WithHTTPClient() = %s", cmp.Diff(tt.h, cl.c, ignoredTransports, equateFuncs))
@@ -427,8 +415,8 @@ func TestC_ToCollection(t *testing.T) {
 			}
 
 			gotIRI, gotIt, err := c.ToCollection(tt.args.toSend, toCollections...)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("ToCollection() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors("")) {
+				t.Errorf("ToCollection() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors("")))
 				return
 			}
 			if gotIRI != tt.wantIRI {
@@ -558,8 +546,8 @@ func TestC_toCollection(t *testing.T) {
 			}
 
 			gotIRI, gotIt, err := c.toCollection(tt.args.ctx, tt.args.act, colIRI)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("toCollection() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors("")) {
+				t.Errorf("toCollection() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors("")))
 				return
 			}
 			if gotIRI != tt.wantIRI {
@@ -567,6 +555,101 @@ func TestC_toCollection(t *testing.T) {
 			}
 			if !cmp.Equal(gotIt, tt.wantIt, EquateItems) {
 				t.Errorf("toCollection() got item = %s", cmp.Diff(tt.wantIt, gotIt, EquateItems))
+			}
+		})
+	}
+}
+
+func TestC_LoadIRI(t *testing.T) {
+	tests := []struct {
+		name      string
+		client    httpClient
+		handlerFn http.HandlerFunc
+		id        vocab.IRI
+		want      vocab.Item
+		wantErr   cerr
+	}{
+		{
+			name:    "empty",
+			wantErr: errf("invalid nil IRI"),
+		},
+		{
+			name:    "invalid IRI",
+			id:      ":",
+			wantErr: errf("trying to load an invalid IRI").annotate(errors.Newf(":: parse \":\": missing protocol scheme")),
+		},
+		{
+			name:    "no valid handler",
+			id:      "http://example.com",
+			wantErr: errf("invalid status received").status(http.StatusGatewayTimeout),
+		},
+		{
+			name: "404 response",
+			handlerFn: func(w http.ResponseWriter, r *http.Request) {
+				errors.HandleError(errors.NotFoundf("NOT FOUND")).ServeHTTP(w, r)
+			},
+			id:      "http://example.com",
+			wantErr: errf("invalid status received").status(http.StatusNotFound).annotate(errors.NotFoundf("NOT FOUND")),
+		},
+		{
+			name: "empty body",
+			handlerFn: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			},
+			id:      "http://example.com",
+			wantErr: errf("invalid response from ActivityPub server").annotate(errors.NotImplementedf("not a document and not an error")),
+		},
+		{
+			name: "invalid json body",
+			handlerFn: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{`))
+			},
+			id:      "http://example.com",
+			wantErr: errf("invalid ActivityPub object returned").annotate(errors.Newf("cannot parse JSON: cannot parse object: missing '}'; unparsed tail: \"\"")),
+		},
+		{
+			name: "empty body but Gone",
+			handlerFn: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusGone)
+			},
+			id:      "http://example.com",
+			wantErr: errf("").annotate(errors.Gonef("gone")),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := C{
+				c: tt.client,
+				l: lw.Dev(lw.SetOutput(t.Output())),
+			}
+			if tt.handlerFn == nil {
+				tt.handlerFn = func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(http.StatusGatewayTimeout)
+				}
+			}
+
+			srv := httptest.NewServer(tt.handlerFn)
+			if tt.id != "" {
+				u, err := url.Parse(string(tt.id))
+				if err == nil {
+					su, _ := url.Parse(srv.URL)
+					u.Host = su.Host
+					tt.id = vocab.IRI(u.String())
+
+					if tt.wantErr.msg != "" || tt.wantErr.err != nil {
+						tt.wantErr.i = tt.id
+					}
+				}
+			}
+
+			got, err := c.LoadIRI(tt.id)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(srv.URL)) {
+				t.Errorf("LoadIRI() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(srv.URL)))
+				return
+			}
+			if !cmp.Equal(got, tt.want) {
+				t.Errorf("LoadIRI() got = %s", cmp.Diff(tt.want, got))
 			}
 		})
 	}

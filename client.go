@@ -163,36 +163,37 @@ func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 		c.l.WithContext(errCtx, Ctx{"err": err}).Errorf("failed to load IRI")
 		return obj, err
 	}
-	if resp == nil {
-		err := errf("unable to load from the ActivityPub end point: nil response").iri(id)
-		c.l.WithContext(errCtx, Ctx{"duration": time.Now().Sub(st)}).Errorf("Error: %s", err)
-		return obj, err
-	}
+
 	// NOTE(marius): here we might want to group the Close with a Flush of the
 	// Body using io.Copy(ioutil.Discard, resp.Body)
 	defer resp.Body.Close()
 
 	errCtx["duration"] = time.Now().Sub(st)
 	errCtx["status"] = resp.StatusCode
-	//errCtx["headers"] = resp.Header
-	//errCtx["proto"] = resp.Proto
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusGone {
-		err := errf("unable to load from the ActivityPub end point") //.status(resp.StatusCode).iri(id)
-		c.l.WithContext(errCtx, Ctx{"err": err}).Errorf("error response received")
-		return obj, err
-	}
-
+	errCtx["headers"] = resp.Header
 	var body []byte
 	if body, err = io.ReadAll(resp.Body); err != nil {
 		c.l.WithContext(errCtx, Ctx{"err": err}).Errorf("unable to read response body")
 		return obj, err
 	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusGone {
+		c.l.WithContext(errCtx, Ctx{"err": err}).Errorf("error response received")
+		errb, _ := errors.UnmarshalJSON(body)
+		if len(errb) > 0 {
+			err = errf("invalid status received").status(resp.StatusCode).iri(id).annotate(errb[0])
+		} else {
+			err = errf("invalid status received").status(resp.StatusCode).iri(id)
+		}
+
+		return obj, err
+	}
+
 	c.l.WithContext(errCtx).Infof("OK")
 
 	it, err := vocab.UnmarshalJSON(body)
 	if err != nil {
-		return nil, err
+		return nil, errf("invalid ActivityPub object returned").annotate(err)
 	}
 
 	if it != nil {

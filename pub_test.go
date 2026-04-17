@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -100,8 +99,8 @@ func Test_validateObject(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := validateObject(tt.it); !cmp.Equal(tt.wantErr, err, EquateWeakErrors) {
-				t.Errorf("validateObject() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if err := validateObject(tt.it); !cmp.Equal(tt.wantErr, err, EquateWeakErrors("")) {
+				t.Errorf("validateObject() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors("")))
 			}
 		})
 	}
@@ -139,8 +138,8 @@ func Test_validateActor(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := validateActor(tt.it); !cmp.Equal(tt.wantErr, err, EquateWeakErrors) {
-				t.Errorf("validateActor() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if err := validateActor(tt.it); !cmp.Equal(tt.wantErr, err, EquateWeakErrors("")) {
+				t.Errorf("validateActor() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors("")))
 			}
 		})
 	}
@@ -498,24 +497,10 @@ func Test_validateIRIForRequest(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := validateIRIForRequest(tt.i); !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("validateIRIForRequest() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if err := validateIRIForRequest(tt.i); !cmp.Equal(err, tt.wantErr, EquateWeakErrors("")) {
+				t.Errorf("validateIRIForRequest() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors("")))
 			}
 		})
-	}
-}
-
-func ctxLogFn(t *testing.T) CtxLogFn {
-	return func(ctx ...Ctx) LogFn {
-		return func(s string, a ...any) {
-			cc := make(lw.Ctx)
-			for _, c := range ctx {
-				for k, v := range c {
-					cc[k] = v
-				}
-			}
-			t.Log(fmt.Sprintf("%s %v", fmt.Sprintf(s, a...), cc))
-		}
 	}
 }
 
@@ -529,19 +514,19 @@ func TestC_Collection(t *testing.T) {
 	}{
 		{
 			name:    "empty",
-			wantErr: errors.Newf("unable to load: invalid nil IRI"),
+			wantErr: errf("unable to load: invalid nil IRI"),
 		},
 		{
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("unable to load from the ActivityPub end point"), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
 		},
 		{
 			name:    "invalid collection type",
 			path:    "/inbox",
 			col:     &vocab.Collection{ID: "http://example.com/~jdoe/inbox", Type: vocab.NoteType, TotalItems: 0, AttributedTo: vocab.IRI("http://example.com/~jdoe")},
-			wantErr: errors.Errorf("response item type is not a valid collection: \"Note\""),
+			wantErr: errf("response item type is not a valid collection: \"Note\""),
 		},
 		{
 			name: "ordered collection",
@@ -598,15 +583,15 @@ func TestC_Collection(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			ctx := context.Background()
 			var iri vocab.IRI
 			if tt.path != "" {
 				iri = vocab.IRI(srv.URL).AddPath(tt.path)
 			}
 
+			ctx := context.Background()
 			got, err := c.Collection(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("Collection() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri))) {
+				t.Errorf("Collection() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri))))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
@@ -652,7 +637,7 @@ func TestC_Inbox(t *testing.T) {
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("unable to load from the ActivityPub end point"), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
@@ -686,8 +671,8 @@ func TestC_Inbox(t *testing.T) {
 			}
 
 			got, err := c.Inbox(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("Inbox() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri)+"/inbox")) {
+				t.Errorf("Inbox() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri)+"/inbox")))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
@@ -790,7 +775,7 @@ func TestC_Outbox(t *testing.T) {
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("unable to load from the ActivityPub end point"), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
@@ -824,8 +809,8 @@ func TestC_Outbox(t *testing.T) {
 			}
 
 			got, err := c.Outbox(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("Outbox() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri)+"/outbox")) {
+				t.Errorf("Outbox() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri)+"/outbox")))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
@@ -851,7 +836,7 @@ func TestC_Followers(t *testing.T) {
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("unable to load from the ActivityPub end point"), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
@@ -885,8 +870,8 @@ func TestC_Followers(t *testing.T) {
 			}
 
 			got, err := c.Followers(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("Followers() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri)+"/followers")) {
+				t.Errorf("Followers() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri)+"/followers")))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
@@ -912,7 +897,7 @@ func TestC_Following(t *testing.T) {
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("unable to load from the ActivityPub end point"), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
@@ -946,8 +931,8 @@ func TestC_Following(t *testing.T) {
 			}
 
 			got, err := c.Following(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("Following() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri)+"/following")) {
+				t.Errorf("Following() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri)+"/following")))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
@@ -973,7 +958,7 @@ func TestC_Liked(t *testing.T) {
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("unable to load from the ActivityPub end point"), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
@@ -1007,8 +992,8 @@ func TestC_Liked(t *testing.T) {
 			}
 
 			got, err := c.Liked(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("Liked() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri)+"/liked")) {
+				t.Errorf("Liked() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri)+"/liked")))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
@@ -1034,7 +1019,7 @@ func TestC_Likes(t *testing.T) {
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("unable to load from the ActivityPub end point"), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
@@ -1068,8 +1053,8 @@ func TestC_Likes(t *testing.T) {
 			}
 
 			got, err := c.Likes(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("Likes() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri)+"/likes")) {
+				t.Errorf("Likes() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri)+"/likes")))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
@@ -1095,7 +1080,7 @@ func TestC_Shares(t *testing.T) {
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("unable to load from the ActivityPub end point"), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
@@ -1129,8 +1114,8 @@ func TestC_Shares(t *testing.T) {
 			}
 
 			got, err := c.Shares(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("Shares() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri)+"/shares")) {
+				t.Errorf("Shares() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri)+"/shares")))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
@@ -1156,7 +1141,7 @@ func TestC_Replies(t *testing.T) {
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("unable to load from the ActivityPub end point"), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
@@ -1190,8 +1175,8 @@ func TestC_Replies(t *testing.T) {
 			}
 
 			got, err := c.Replies(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("Replies() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri)+"/replies")) {
+				t.Errorf("Replies() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri)+"/replies")))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
@@ -1217,7 +1202,7 @@ func TestC_Actor(t *testing.T) {
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("unable to load from the ActivityPub end point"), "unable to load actor"),
+			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
 		},
 		{
 			name: "jdoe",
@@ -1254,8 +1239,8 @@ func TestC_Actor(t *testing.T) {
 			}
 
 			got, err := c.Actor(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("Actor() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri))) {
+				t.Errorf("Actor() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri))))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
@@ -1281,7 +1266,7 @@ func TestC_Object(t *testing.T) {
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("unable to load from the ActivityPub end point"), "unable to load object"),
+			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
 		},
 		{
 			name: "jdoe",
@@ -1318,8 +1303,8 @@ func TestC_Object(t *testing.T) {
 			}
 
 			got, err := c.Object(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("Object() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri))) {
+				t.Errorf("Object() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri))))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
@@ -1355,7 +1340,7 @@ func TestC_Activity(t *testing.T) {
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("unable to load from the ActivityPub end point"), "unable to load activity"),
+			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
 		},
 		{
 			name: "jdoe",
@@ -1392,8 +1377,8 @@ func TestC_Activity(t *testing.T) {
 			}
 
 			got, err := c.Activity(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("Activity() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri))) {
+				t.Errorf("Activity() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri))))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
@@ -1402,6 +1387,7 @@ func TestC_Activity(t *testing.T) {
 		})
 	}
 }
+
 func FirstOr(it ...vocab.Item) vocab.Item {
 	if len(it) == 0 {
 		return nil
@@ -1471,8 +1457,8 @@ func TestC_ToOutbox(t *testing.T) {
 			})
 
 			gotIRI, gotIt, err := c.ToOutbox(ctx, tt.toSend)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("Outbox() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors("")) {
+				t.Errorf("Outbox() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors("")))
 				return
 			}
 			if gotIRI != tt.wantIRI {
@@ -1534,8 +1520,8 @@ func TestC_ToInbox(t *testing.T) {
 			})
 
 			gotIRI, gotIt, err := c.ToInbox(ctx, tt.toSend)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("Inbox() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors("")) {
+				t.Errorf("Inbox() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors("")))
 				return
 			}
 			if gotIRI != tt.wantIRI {
@@ -1614,8 +1600,8 @@ func TestActivityActorTargetCollections(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := ActivityActorTargetCollections(tt.args.act, tt.args.colFn)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("ActivityActorTargetCollections() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors("")) {
+				t.Errorf("ActivityActorTargetCollections() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors("")))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
