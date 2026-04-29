@@ -2,7 +2,7 @@
 
 [![MIT Licensed](https://img.shields.io/github/license/go-ap/client.svg)](https://raw.githubusercontent.com/go-ap/client/master/LICENSE)
 [![Build Status](https://builds.sr.ht/~mariusor/client.svg)](https://builds.sr.ht/~mariusor/client)
-[![Test Coverage](https://img.shields.io/codecov/c/github/go-ap/client.svg)](https://codecov.io/gh/go-ap/client)
+[![Test Coverage](https://img.shields.io/coverallsCoverage/github/go-ap/client)](https://coveralls.io/github/go-ap/client)
 [![Go Report Card](https://goreportcard.com/badge/github.com/go-ap/client)](https://goreportcard.com/report/github.com/go-ap/client)
 
 This project is part of the [GoActivityPub](https://github.com/go-ap) library which helps with creating ActivityPub applications using the Go programming language.
