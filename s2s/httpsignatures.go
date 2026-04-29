@@ -2,6 +2,7 @@ package s2s
 
 import (
 	"bytes"
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -18,24 +19,17 @@ import (
 	"time"
 
 	"git.sr.ht/~mariusor/lw"
-	e "github.com/common-fate/httpsig/alg_ecdsa"
-	ed "github.com/common-fate/httpsig/alg_ed25519"
-	r "github.com/common-fate/httpsig/alg_rsa"
-	"github.com/common-fate/httpsig/sigbase"
-	"github.com/common-fate/httpsig/signature"
-	"github.com/common-fate/httpsig/signer"
-	"github.com/common-fate/httpsig/sigparams"
-	"github.com/common-fate/httpsig/sigset"
+	rfc "github.com/dadrus/httpsig"
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/errors"
-	"github.com/go-fed/httpsig"
+	draft "github.com/go-fed/httpsig"
 )
 
 var (
 	nilLogger = lw.Dev(lw.SetOutput(io.Discard))
 
-	digestAlgorithm     = httpsig.DigestSha256
-	signatureExpiration = int64(time.Hour.Seconds())
+	digestAlgorithm  = draft.DigestSha256
+	sigValidDuration = time.Hour
 )
 
 type Transport struct {
@@ -46,7 +40,7 @@ type Transport struct {
 	// See: https://www.rfc-editor.org/rfc/rfc9421.html#section-2.3-4.12
 	Tag string
 
-	nonceFn           func() (string, error)
+	nonceFn           noncer
 	skipRFCSignatures bool
 
 	Key   crypto.PrivateKey
@@ -135,10 +129,6 @@ func pemEncodePublicKey(prvKey crypto.PrivateKey) string {
 	return strings.ReplaceAll(string(pem.EncodeToMemory(&p)), "\n", "")
 }
 
-var getCurrentTime = func() time.Time {
-	return time.Now().Truncate(time.Millisecond).UTC()
-}
-
 func randomNonce() (string, error) {
 	nonceBytes := make([]byte, 32)
 	_, err := rand.Read(nonceBytes)
@@ -146,6 +136,68 @@ func randomNonce() (string, error) {
 		return "", fmt.Errorf("could not generate nonce: %w", err)
 	}
 	return base64.URLEncoding.EncodeToString(nonceBytes), nil
+}
+
+type noncer func() (string, error)
+
+func (n noncer) GetNonce(_ context.Context) (string, error) {
+	return n()
+}
+
+func validateActorPublicKey(key crypto.PrivateKey, act vocab.Actor) error {
+	actorPubKey, err := toCryptoPublicKey(act.PublicKey)
+	if err != nil {
+		return errors.Annotatef(err, "unable to sign request, Actor public key type %T is invalid", actorPubKey)
+	}
+	switch pk := key.(type) {
+	case *rsa.PrivateKey:
+		pub := &pk.PublicKey
+		if !pub.Equal(actorPubKey) {
+			return keyMismatchErr(pk, actorPubKey)
+		}
+	case *ecdsa.PrivateKey:
+		pub, ok := pk.Public().(*ecdsa.PublicKey)
+		if !ok || !pub.Equal(actorPubKey) {
+			return keyMismatchErr(pk, actorPubKey)
+		}
+	case ed25519.PrivateKey:
+		pub, _ := pk.Public().(ed25519.PublicKey)
+		if !pub.Equal(actorPubKey) {
+			return keyMismatchErr(pk, actorPubKey)
+		}
+	}
+	return nil
+}
+
+func rfcAlgorithmFromPrivateKey(key crypto.PrivateKey) rfc.SignatureAlgorithm {
+	// NOTE(marius): I'm not sure what purpose it serves to validate the public key of the actor
+	// against the private key
+	var alg rfc.SignatureAlgorithm
+	switch pk := key.(type) {
+	case *rsa.PrivateKey:
+		switch pk.PublicKey.Size() {
+		case 128, 256:
+			alg = rfc.RsaPkcs1v15Sha256
+		case 384:
+			alg = rfc.RsaPkcs1v15Sha384
+		case 512:
+			alg = rfc.RsaPkcs1v15Sha512
+		}
+	case *ecdsa.PrivateKey:
+		if p := pk.Params(); p != nil {
+			switch p.BitSize {
+			case 128, 256:
+				alg = rfc.EcdsaP256Sha256
+			case 384:
+				alg = rfc.EcdsaP384Sha384
+			case 512:
+				alg = rfc.EcdsaP521Sha512
+			}
+		}
+	case ed25519.PrivateKey:
+		alg = rfc.Ed25519
+	}
+	return alg
 }
 
 func (s *Transport) signRequestRFC(req *http.Request) error {
@@ -156,85 +208,38 @@ func (s *Transport) signRequestRFC(req *http.Request) error {
 		return errors.Newf("unable to sign request, private key is invalid")
 	}
 
-	act := s.Actor
-	prv := s.Key
-	actorPubKey, err := toCryptoPublicKey(act.PublicKey)
-	if err != nil {
-		return errors.Annotatef(err, "unable to sign request, Actor public key type %T is invalid", actorPubKey)
+	if err := validateActorPublicKey(s.Key, *s.Actor); err != nil {
+		return errors.Annotatef(err, "unable to sign request, Actor public key does not match it's private key")
 	}
-	keyID := string(act.PublicKey.ID)
 
-	var alg signer.Algorithm
-	switch pk := prv.(type) {
-	case *rsa.PrivateKey:
-		pub, _ := pk.Public().(*rsa.PublicKey)
-		if !pub.Equal(actorPubKey) {
-			return keyMismatchErr(pk, actorPubKey)
-		}
-		alg = r.NewRSAPKCS256Signer(pk)
-	case *ecdsa.PrivateKey:
-		pub, _ := pk.Public().(*ecdsa.PublicKey)
-		if !pub.Equal(actorPubKey) {
-			return keyMismatchErr(pk, actorPubKey)
-		}
-		alg = e.NewP384Signer(pk)
-	case ed25519.PrivateKey:
-		pub, _ := pk.Public().(ed25519.PublicKey)
-		if !pub.Equal(actorPubKey) {
-			return keyMismatchErr(pk, actorPubKey)
-		}
-		alg = &ed.Ed25519{PrivateKey: pk, PublicKey: pub}
+	key := rfc.Key{
+		KeyID:     string(s.Actor.PublicKey.ID),
+		Algorithm: rfcAlgorithmFromPrivateKey(s.Key),
+		Key:       s.Key,
 	}
-	// parse the existing signature set on the request
-	set, err := sigset.Unmarshal(req)
+
+	initFns := []rfc.SignerOption{
+		rfc.WithTTL(sigValidDuration),
+		rfc.WithNonce(s.nonceFn),
+	}
+
+	switch req.Method {
+	case http.MethodHead, http.MethodGet:
+		initFns = append(initFns, rfc.WithComponents(FetchCoveredComponents...))
+	case http.MethodPost:
+		initFns = append(initFns, rfc.WithComponents(PostCoveredComponents...))
+		initFns = append(initFns, rfc.WithContentDigestAlgorithm(rfc.Sha256))
+	}
+	signer, err := rfc.NewSigner(key, initFns...)
 	if err != nil {
 		return err
 	}
-
-	// derive the signature.
-	nonce, err := s.nonceFn()
+	postSignHeaders, err := signer.Sign(rfc.MessageFromRequest(req))
 	if err != nil {
-		return fmt.Errorf("generating nonce: %w", err)
+		return err
 	}
-
-	coveredComponents := PostCoveredComponents
-	switch req.Method {
-	case http.MethodHead, http.MethodGet:
-		coveredComponents = FetchCoveredComponents
-	}
-	params := sigparams.Params{
-		KeyID:             keyID,
-		Tag:               s.Tag,
-		Alg:               alg.Type(),
-		Created:           getCurrentTime(),
-		CoveredComponents: coveredComponents,
-		Nonce:             nonce,
-	}
-
-	// derive the signature base following the process in https://www.rfc-editor.org/rfc/rfc9421.html#create-sig-input
-	base, err := sigbase.Derive(params, nil, req, alg.ContentDigest())
-	if err != nil {
-		return fmt.Errorf("deriving signature base: %w", err)
-	}
-
-	stringToSign, err := base.CanonicalString(params)
-	if err != nil {
-		return fmt.Errorf("creating string to sign: %w", err)
-	}
-	// sign the signature base according to the signing algorithm
-	sig, err := alg.Sign(req.Context(), stringToSign)
-	if err != nil {
-		return fmt.Errorf("error signing request: %w", err)
-	}
-
-	// construct the HTTP message signature
-	ms := signature.Message{Input: params, Signature: sig}
-
-	// add the signature to the set
-	set.Add(&ms)
-
-	// include the signature in the cloned HTTP request.
-	return set.Include(req)
+	req.Header = postSignHeaders
+	return nil
 }
 
 var ErrRetry = errors.Newf("retry")
@@ -314,7 +319,7 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		// NOTE(marius): try #2: use Cavage-12 draft signature
-		res, err = roundTripFn(cloneRequest(&or, buff), s.signRequestCavage)
+		res, err = roundTripFn(cloneRequest(&or, buff), s.signRequestDraft)
 		if err == nil || !errors.Is(err, ErrRetry) {
 			return res, err
 		}
@@ -344,14 +349,18 @@ func toCryptoPublicKey(key vocab.PublicKey) (crypto.PublicKey, error) {
 	if block == nil {
 		return nil, errors.Errorf("invalid PEM decode on public key")
 	}
-	return x509.ParsePKIXPublicKey(block.Bytes)
+	pk, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err == nil {
+		return pk, err
+	}
+	return x509.ParsePKCS1PublicKey(block.Bytes)
 }
 
 func keyMismatchErr(pk crypto.PrivateKey, pub crypto.PublicKey) error {
 	return errors.Newf("unable to sign request, mismatch between the Actor's public and private key: %T : %T", pub, pk)
 }
 
-func (s *Transport) signRequestCavage(req *http.Request) error {
+func (s *Transport) signRequestDraft(req *http.Request) error {
 	if s.Actor == nil {
 		return errors.Newf("unable to sign request, Actor is invalid")
 	}
@@ -375,18 +384,35 @@ func (s *Transport) signRequestCavage(req *http.Request) error {
 		}
 	}
 
-	algos := make([]httpsig.Algorithm, 0)
-	switch s.Key.(type) {
+	algos := make([]draft.Algorithm, 0)
+	switch pk := s.Key.(type) {
 	case *rsa.PrivateKey:
-		algos = append(algos, httpsig.RSA_SHA256, httpsig.RSA_SHA512)
+		switch pk.PublicKey.Size() {
+		case 128, 256:
+			algos = append(algos, draft.RSA_SHA256)
+		case 384:
+			algos = append(algos, draft.RSA_SHA384)
+		case 512:
+			algos = append(algos, draft.RSA_SHA512)
+		}
 	case *ecdsa.PrivateKey:
-		algos = append(algos, httpsig.ECDSA_SHA512, httpsig.ECDSA_SHA256)
+		if p := pk.Params(); p != nil {
+			switch p.BitSize {
+			case 128, 256:
+				algos = append(algos, draft.ECDSA_SHA256)
+			case 384:
+				algos = append(algos, draft.ECDSA_SHA384)
+			case 512:
+				algos = append(algos, draft.ECDSA_SHA512)
+			}
+		}
 	case ed25519.PrivateKey:
-		algos = append(algos, httpsig.ED25519)
+		algos = append(algos, draft.ED25519)
 	}
 
+	secToExpiration := int64(sigValidDuration.Seconds())
 	// NOTE(marius): The only http-signatures accepted by Mastodon instances is "Signature", not "Authorization"
-	sig, _, err := httpsig.NewSigner(algos, digestAlgorithm, headers, httpsig.Signature, signatureExpiration)
+	sig, _, err := draft.NewSigner(algos, digestAlgorithm, headers, draft.Signature, secToExpiration)
 	if err != nil {
 		return err
 	}

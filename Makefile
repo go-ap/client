@@ -1,6 +1,6 @@
 GO ?= go
 TEST := $(GO) test
-TEST_FLAGS ?= -v
+TEST_FLAGS ?= -v -tags dev
 TEST_TARGET ?= ./...
 GO111MODULE=on
 PROJECT_NAME := $(shell basename $(PWD))

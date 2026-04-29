@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"testing"
 	"time"
 
@@ -36,7 +37,7 @@ func TestWithActor(t *testing.T) {
 		},
 		{
 			name:    "w/ actor, w/o key",
-			args:    args{actorFn, nil},
+			args:    args{jdoeActor, nil},
 			wantErr: nil,
 		},
 		{
@@ -51,7 +52,7 @@ func TestWithActor(t *testing.T) {
 		},
 		{
 			name:    "w/ actor, w/ RSA key",
-			args:    args{actorFn, prv},
+			args:    args{jdoeActor, prv},
 			wantErr: nil,
 		},
 		{
@@ -61,7 +62,7 @@ func TestWithActor(t *testing.T) {
 		},
 		{
 			name:    "w/ actor, w/ ED25519 key",
-			args:    args{actorED25519, prvED25519},
+			args:    args{actorED25519, prvEd25519},
 			wantErr: nil,
 		},
 	}
@@ -174,9 +175,9 @@ func TestNew(t *testing.T) {
 		},
 		{
 			name:    "with Actor",
-			initFns: []OptionFn{WithActor(actorED25519, prvED25519)},
+			initFns: []OptionFn{WithActor(actorED25519, prvEd25519)},
 			want: &Transport{
-				Key:   prvED25519,
+				Key:   prvEd25519,
 				Actor: actorED25519,
 			},
 		},
@@ -190,23 +191,30 @@ func TestNew(t *testing.T) {
 	}
 }
 
-func TestTransport_RoundTrip(t *testing.T) {
-	type req struct {
-		met  string
-		hdrs url.Values
-		body []byte
+func mockPostReq(body []byte, hh ...url.Values) *http.Request {
+	r := httptest.NewRequest(http.MethodPost, "http://example.com", bytes.NewReader(body))
+	for _, h := range hh {
+		for k, v := range h {
+			r.Header[k] = v
+		}
 	}
+	r.Header.Add("Content-Length", strconv.Itoa(len(body)))
+	return r
+}
+
+func TestTransport_RoundTrip(t *testing.T) {
 	tests := []struct {
 		name       string
 		initFns    []OptionFn
 		handler    http.HandlerFunc
-		req        req
+		req        *http.Request
 		wantStatus int
 		wantBody   []byte
 		wantErr    error
 	}{
 		{
 			name: "empty",
+			req:  httptest.NewRequest(http.MethodGet, "http://example.com", nil),
 			handler: func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			},
@@ -223,15 +231,11 @@ func TestTransport_RoundTrip(t *testing.T) {
 				}
 				w.WriteHeader(http.StatusOK)
 			},
-			initFns: []OptionFn{WithActor(actorED25519, prvED25519), NoRFC9421},
-			req: req{
-				met: http.MethodPost,
-				hdrs: url.Values{
-					"Date": []string{time.Now().Format(http.TimeFormat)},
-					"Host": []string{"example.com"},
-				},
-				body: []byte("test"),
-			},
+			initFns: []OptionFn{WithActor(actorED25519, prvEd25519), NoRFC9421},
+			req: mockPostReq([]byte("test"), url.Values{
+				"Date": []string{time.Now().Format(http.TimeFormat)},
+				"Host": []string{"example.com"},
+			}),
 			wantStatus: http.StatusOK,
 		},
 		{
@@ -246,14 +250,10 @@ func TestTransport_RoundTrip(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 			},
 			initFns: []OptionFn{WithActor(actorRSA, prvRSA), NoRFC9421},
-			req: req{
-				met: http.MethodPost,
-				hdrs: url.Values{
-					"Date": []string{time.Now().Format(http.TimeFormat)},
-					"Host": []string{"example.com"},
-				},
-				body: []byte("test"),
-			},
+			req: mockPostReq([]byte("test"), url.Values{
+				"Date": []string{time.Now().Format(http.TimeFormat)},
+				"Host": []string{"example.com"},
+			}),
 			wantStatus: http.StatusOK,
 		},
 		{
@@ -268,14 +268,10 @@ func TestTransport_RoundTrip(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 			},
 			initFns: []OptionFn{WithActor(actorECDSA, prvECDSA), NoRFC9421},
-			req: req{
-				met: http.MethodPost,
-				hdrs: url.Values{
-					"Date": []string{time.Now().Format(http.TimeFormat)},
-					"Host": []string{"example.com"},
-				},
-				body: []byte("test"),
-			},
+			req: mockPostReq([]byte("test"), url.Values{
+				"Date": []string{time.Now().Format(http.TimeFormat)},
+				"Host": []string{"example.com"},
+			}),
 			wantStatus: http.StatusOK,
 		},
 		{
@@ -289,8 +285,11 @@ func TestTransport_RoundTrip(t *testing.T) {
 				}
 				w.WriteHeader(http.StatusOK)
 			},
-			req:        req{body: []byte("test")},
-			initFns:    []OptionFn{WithActor(actorED25519, prvED25519)},
+			req: mockPostReq([]byte("test"), url.Values{
+				"Host": []string{"example.com"},
+				"Date": []string{time.Now().Format(http.TimeFormat)},
+			}),
+			initFns:    []OptionFn{WithActor(actorED25519, prvEd25519)},
 			wantStatus: http.StatusOK,
 			wantErr:    nil,
 		},
@@ -305,7 +304,10 @@ func TestTransport_RoundTrip(t *testing.T) {
 				}
 				w.WriteHeader(http.StatusOK)
 			},
-			req:        req{body: []byte("test")},
+			req: mockPostReq([]byte("test"), url.Values{
+				"Host": []string{"example.com"},
+				"Date": []string{time.Now().Format(http.TimeFormat)},
+			}),
 			initFns:    []OptionFn{WithActor(actorRSA, prvRSA)},
 			wantStatus: http.StatusOK,
 			wantErr:    nil,
@@ -321,7 +323,10 @@ func TestTransport_RoundTrip(t *testing.T) {
 				}
 				w.WriteHeader(http.StatusOK)
 			},
-			req:        req{body: []byte("test")},
+			req: mockPostReq([]byte("test"), url.Values{
+				"Host": []string{"example.com"},
+				"Date": []string{time.Now().Format(http.TimeFormat)},
+			}),
 			initFns:    []OptionFn{WithActor(actorECDSA, prvECDSA)},
 			wantStatus: http.StatusOK,
 			wantErr:    nil,
@@ -330,24 +335,26 @@ func TestTransport_RoundTrip(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := httptest.NewServer(tt.handler)
-			defer server.Close()
+			if tt.handler != nil {
+				server := httptest.NewServer(tt.handler)
+				defer server.Close()
+
+				su, _ := url.Parse(server.URL)
+				if tt.req != nil && su != nil {
+					tt.req.URL.Host = su.Host
+				}
+			}
 
 			dt := New(tt.initFns...)
-
-			var body io.Reader
-			if tt.req.body != nil {
-				body = bytes.NewBuffer(tt.req.body)
+			got, err := dt.RoundTrip(tt.req)
+			if !cmp.Equal(tt.wantErr, err, EquateWeakErrors) {
+				t.Fatalf("RoundTrip() error = %v, wanted error %v", err, tt.wantErr)
+				return
 			}
-
-			req := httptest.NewRequest(tt.req.met, server.URL, body)
-			for k := range tt.req.hdrs {
-				req.Header.Set(k, tt.req.hdrs.Get(k))
-			}
-
-			got, err := dt.RoundTrip(req)
-			if (err != nil) && !errors.Is(tt.wantErr, err) {
-				t.Errorf("RoundTrip() error = %v, wanted error %v", err, tt.wantErr)
+			if got == nil {
+				if tt.wantErr == nil {
+					t.Errorf("RoundTrip() nil response when no error expected")
+				}
 				return
 			}
 
@@ -431,19 +438,21 @@ DwcMY+iaEAgUTM1wAZ097BDYA7slyqP7
 		ID: "https://example.com/~johndoe",
 		PublicKey: vocab.PublicKey{
 			ID:           "https://example.com/~johndoe#main",
-			Owner:        actorFn.ID,
+			Owner:        jdoeActor.ID,
 			PublicKeyPem: pubPemECDSA,
 		},
 	}
 
-	blockED25519, _ = pem.Decode([]byte(prvPemED25519))
-	prvED25519, _   = x509.ParsePKCS8PrivateKey(blockED25519.Bytes)
+	blockPrvEd25519, _ = pem.Decode([]byte(prvPemED25519))
+	prvEd25519, _      = x509.ParsePKCS8PrivateKey(blockPrvEd25519.Bytes)
+	blockPubEd25519, _ = pem.Decode([]byte(pubPemED25519))
+	pubED25519, _      = x509.ParsePKIXPublicKey(blockPubEd25519.Bytes)
 
 	actorED25519 = &vocab.Actor{
 		ID: "https://example.com/~johndoe",
 		PublicKey: vocab.PublicKey{
 			ID:           "https://example.com/~johndoe#main",
-			Owner:        actorFn.ID,
+			Owner:        jdoeActor.ID,
 			PublicKeyPem: pubPemED25519,
 		},
 	}
@@ -455,32 +464,13 @@ DwcMY+iaEAgUTM1wAZ097BDYA7slyqP7
 		ID: "https://example.com/~johndoe",
 		PublicKey: vocab.PublicKey{
 			ID:           "https://example.com/~johndoe#main",
-			Owner:        actorFn.ID,
+			Owner:        jdoeActor.ID,
 			PublicKeyPem: pubPemRSA,
 		},
 	}
 )
 
 const StatusFailedTest = http.StatusExpectationFailed
-
-func sameBodyHandler(t *testing.T, bodyBuff, respBuff []byte) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Errorf("RoundTrip() handler body read unexpected error = %v", err)
-			w.WriteHeader(StatusFailedTest)
-			return
-		}
-		//wantedBuff = append(wantedBuff, 'a', 'b')
-		if !bytes.Equal(body, bodyBuff) {
-			t.Errorf("RoundTrip() handler request body = %s, different than wanted %s", body, bodyBuff)
-			w.WriteHeader(StatusFailedTest)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(respBuff)
-	}
-}
 
 func areErrors(a, b any) bool {
 	_, ok1 := a.(error)
