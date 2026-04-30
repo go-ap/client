@@ -331,6 +331,52 @@ func TestTransport_RoundTrip(t *testing.T) {
 			wantStatus: http.StatusOK,
 			wantErr:    nil,
 		},
+		{
+			name: "with actor - ED25519, two tries",
+			handler: func() http.HandlerFunc {
+				authorized := false
+				return func(w http.ResponseWriter, r *http.Request) {
+					if sig := r.Header.Get("Signature"); sig != "" {
+						t.Logf("RoundTrip() Signature: %s", sig)
+					}
+					if sigInput := r.Header.Get("Signature-Input"); sigInput != "" {
+						t.Logf("RoundTrip() Signature-Input: %s", sigInput)
+					}
+					if !authorized {
+						w.WriteHeader(http.StatusUnauthorized)
+						authorized = true
+						return
+					}
+					w.WriteHeader(http.StatusOK)
+				}
+			}(),
+			req: mockPostReq([]byte("test"), url.Values{
+				"Host": []string{"example.com"},
+				"Date": []string{time.Now().Format(http.TimeFormat)},
+			}),
+			initFns:    []OptionFn{WithActor(actorED25519, prvEd25519)},
+			wantStatus: http.StatusOK,
+			wantErr:    nil,
+		},
+		{
+			name: "with actor - ED25519, two failures",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				if sig := r.Header.Get("Signature"); sig != "" {
+					t.Logf("RoundTrip() Signature: %s", sig)
+				}
+				if sigInput := r.Header.Get("Signature-Input"); sigInput != "" {
+					t.Logf("RoundTrip() Signature-Input: %s", sigInput)
+				}
+				w.WriteHeader(http.StatusUnauthorized)
+			},
+			req: mockPostReq([]byte("test"), url.Values{
+				"Host": []string{"example.com"},
+				"Date": []string{time.Now().Format(http.TimeFormat)},
+			}),
+			initFns:    []OptionFn{WithActor(actorED25519, prvEd25519)},
+			wantStatus: http.StatusOK,
+			wantErr:    errors.Unauthorizedf("unauthorized"),
+		},
 	}
 
 	for _, tt := range tests {
@@ -469,8 +515,6 @@ DwcMY+iaEAgUTM1wAZ097BDYA7slyqP7
 		},
 	}
 )
-
-const StatusFailedTest = http.StatusExpectationFailed
 
 func areErrors(a, b any) bool {
 	_, ok1 := a.(error)

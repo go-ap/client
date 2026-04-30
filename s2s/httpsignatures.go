@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 
@@ -113,7 +112,7 @@ type privateKey interface {
 	Public() crypto.PublicKey
 }
 
-func pemEncodePublicKey(prvKey crypto.PrivateKey) string {
+func pemEncodePrivateKey(prvKey crypto.PrivateKey) string {
 	prv, ok := prvKey.(privateKey)
 	if !ok {
 		return fmt.Sprintf("invalid private key: %T", prvKey)
@@ -223,6 +222,10 @@ func (s *Transport) signRequestRFC(req *http.Request) error {
 		rfc.WithNonce(s.nonceFn),
 	}
 
+	if s.Tag != "" {
+		initFns = append(initFns, rfc.WithTag(s.Tag))
+	}
+
 	switch req.Method {
 	case http.MethodHead, http.MethodGet:
 		initFns = append(initFns, rfc.WithComponents(FetchCoveredComponents...))
@@ -256,19 +259,20 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		tr = http.DefaultTransport
 	}
 
-	errs := make([]error, 0, 3)
 	roundTripFn := func(req *http.Request, signFn func(*http.Request) error) (*http.Response, error) {
+		lctx := lw.Ctx{}
 		if signFn != nil {
-			lctx := lw.Ctx{"key": pemEncodePublicKey(s.Key)}
+			lctx["keyType"] = fmt.Sprintf("%T", s.Key)
 			if s.Actor != nil {
 				lctx["actor"] = s.Actor.ID
+				if s.Actor.PublicKey.ID != "" {
+					lctx["keyID"] = s.Actor.PublicKey.ID
+				}
 			}
-			err := signFn(req)
-			if err != nil {
+			if err := signFn(req); err != nil {
 				if s.l != nil {
 					s.l.WithContext(lctx, lw.Ctx{"err": err.Error()}).Errorf("unable to sign request")
 				}
-				errs = append(errs, err)
 				return nil, ErrRetry
 			}
 		}
@@ -283,6 +287,9 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			// NOTE(marius): Not an acceptable response status, so we want to try again.
 			// We also need to close the body of discarded response to avoid leaks.
 			_ = res.Body.Close()
+			if s.l != nil {
+				s.l.WithContext(lctx).Errorf("received %s response", res.Status)
+			}
 			return nil, ErrRetry
 		default:
 			// NOTE(marius): some kind of success
@@ -323,11 +330,14 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		if err == nil || !errors.Is(err, ErrRetry) {
 			return res, err
 		}
+
+		// NOTE(marius): if draft signatures failed also, and this is not
+		// a request that we can retry w/o a signature, we return the resulting
+		// errors.
 		if err != nil && errors.Is(err, ErrRetry) && !isFetchRequest {
-			slices.Reverse(errs)
-			err = errs[0]
-			return res, err
+			return res, errors.Unauthorizedf("unauthorized")
 		}
+
 		if res != nil && res.Body != nil {
 			_ = res.Body.Close()
 		}
@@ -341,7 +351,7 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return roundTripFn(&or, nil)
 	}
 
-	return res, errors.Join(errs...)
+	return nil, errors.Unauthorizedf("unauthorized")
 }
 
 func toCryptoPublicKey(key vocab.PublicKey) (crypto.PublicKey, error) {
