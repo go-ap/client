@@ -18,5 +18,5 @@ var (
 	FetchCoveredComponents = []string{"@method", "@authority", "@path"}
 	// PostCoveredComponents is the list of components to be used for generating the
 	// RFC9421 Signature Base for POST, PUT, DELETE requests.
-	PostCoveredComponents = append(FetchCoveredComponents, "content-type", "content-length", "content-digest")
+	PostCoveredComponents = append(FetchCoveredComponents, "content-type", "content-digest")
 )
