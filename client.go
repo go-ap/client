@@ -150,6 +150,18 @@ func New(o ...OptionFn) *C {
 	return c
 }
 
+var logRelevantHeaders = []string{
+	"Signature-Input", "Signature", "Authorization", "ETag", "User-Agent",
+}
+
+func appendRelevantHeaders(lCtx lw.Ctx, hh http.Header) {
+	for _, h := range logRelevantHeaders {
+		if val := hh.Get(h); val != "" {
+			lCtx[h] = val
+		}
+	}
+}
+
 func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 	errCtx := Ctx{"IRI": id}
 	st := time.Now()
@@ -174,7 +186,7 @@ func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 
 	errCtx["duration"] = time.Now().Sub(st)
 	errCtx["status"] = resp.StatusCode
-	errCtx["headers"] = resp.Header
+	appendRelevantHeaders(errCtx, resp.Header)
 	var body []byte
 	if body, err = io.ReadAll(resp.Body); err != nil {
 		c.l.WithContext(errCtx, Ctx{"err": err}).Errorf("unable to read response body")
