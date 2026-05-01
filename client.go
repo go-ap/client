@@ -184,7 +184,7 @@ func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 	// Body using io.Copy(ioutil.Discard, resp.Body)
 	defer resp.Body.Close()
 
-	errCtx["duration"] = time.Now().Sub(st)
+	errCtx["duration"] = time.Since(st)
 	errCtx["status"] = resp.StatusCode
 	appendRelevantHeaders(errCtx, resp.Header)
 	var body []byte
@@ -204,8 +204,6 @@ func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 
 		return obj, err
 	}
-
-	c.l.WithContext(errCtx).Infof("OK")
 
 	it, err := vocab.UnmarshalJSON(body)
 	if err != nil {
