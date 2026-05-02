@@ -191,6 +191,16 @@ func TestNew(t *testing.T) {
 	}
 }
 
+func mockGetReq(hh ...url.Values) *http.Request {
+	r := httptest.NewRequest(http.MethodGet, "http://example.com", nil)
+	for _, h := range hh {
+		for k, v := range h {
+			r.Header[k] = v
+		}
+	}
+	return r
+}
+
 func mockPostReq(body []byte, hh ...url.Values) *http.Request {
 	r := httptest.NewRequest(http.MethodPost, "http://example.com", bytes.NewReader(body))
 	for _, h := range hh {
@@ -377,6 +387,18 @@ func TestTransport_RoundTrip(t *testing.T) {
 			wantStatus: http.StatusOK,
 			wantErr:    errors.Unauthorizedf("unauthorized"),
 		},
+		{
+			name: "tags.pub failure with status 400",
+			handler: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusBadRequest)
+			},
+			req: mockGetReq(url.Values{
+				"Host": []string{"example.com"},
+				"Date": []string{time.Now().Format(http.TimeFormat)},
+			}),
+			initFns:    []OptionFn{WithActor(actorED25519, prvEd25519)},
+			wantStatus: http.StatusBadRequest,
+		},
 	}
 
 	for _, tt := range tests {
@@ -394,8 +416,7 @@ func TestTransport_RoundTrip(t *testing.T) {
 			dt := New(tt.initFns...)
 			got, err := dt.RoundTrip(tt.req)
 			if !cmp.Equal(tt.wantErr, err, EquateWeakErrors) {
-				t.Fatalf("RoundTrip() error = %v, wanted error %v", err, tt.wantErr)
-				return
+				t.Fatalf("RoundTrip() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
 			}
 			if got == nil {
 				if tt.wantErr == nil {

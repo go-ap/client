@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -94,7 +95,7 @@ func WithApplicationTag(t string) OptionFn {
 
 // New initializes the Transport
 // TODO(marius): we need to add to the return values the errors
-//  that might come from the initialization functions.
+// that might come from the initialization functions.
 func New(initFns ...OptionFn) *Transport {
 	h := new(Transport)
 	h.nonceFn = randomNonce
@@ -261,7 +262,10 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	roundTripFn := func(req *http.Request, signFn func(*http.Request) error) (*http.Response, error) {
 		lctx := lw.Ctx{}
-		if signFn != nil {
+		lastTry := false
+		if signFn == nil {
+			lastTry = true
+		} else {
 			lctx["keyType"] = fmt.Sprintf("%T", s.Key)
 			if s.Actor != nil {
 				lctx["actor"] = s.Actor.ID
@@ -278,11 +282,16 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		res, err := tr.RoundTrip(req)
-		if err != nil {
-			return nil, err
+		if lastTry || err != nil {
+			return res, err
 		}
 
 		switch res.StatusCode {
+		case http.StatusBadRequest:
+			// NOTE(marius): this is a hack for tags.pub that doesn't
+			// return a 403 or 401 error status on failing signatures
+			// See https://todo.sr.ht/~mariusor/go-activitypub/473
+			fallthrough
 		case http.StatusUnauthorized, http.StatusForbidden:
 			// NOTE(marius): Not an acceptable response status, so we want to try again.
 			// We also need to close the body of discarded response to avoid leaks.
@@ -298,7 +307,7 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	or := *req
-	isFetchRequest := req.Method == http.MethodGet || req.Method == http.MethodHead
+	isFetchRequest := slices.Contains([]string{http.MethodGet, http.MethodHead}, req.Method)
 
 	if or.URL != nil && or.URL.Path == "" {
 		or.URL.Path = "/"
