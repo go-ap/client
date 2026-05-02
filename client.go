@@ -150,14 +150,18 @@ func New(o ...OptionFn) *C {
 	return c
 }
 
-var logRelevantHeaders = []string{
-	"Signature-Input", "Signature", "Authorization", "ETag", "User-Agent",
+var logRelevantHeaders = map[string]string{
+	"sig-input": "Signature-Input",
+	"sig":       "Signature",
+	"auth":      "Authorization",
+	"etag":      "ETag",
+	"ua":        "User-Agent",
 }
 
 func appendRelevantHeaders(lCtx lw.Ctx, hh http.Header) {
-	for _, h := range logRelevantHeaders {
+	for k, h := range logRelevantHeaders {
 		if val := hh.Get(h); val != "" {
-			lCtx[h] = val
+			lCtx[k] = val
 		}
 	}
 }
@@ -197,9 +201,10 @@ func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 		c.l.WithContext(errCtx, Ctx{"err": err}).Errorf("error response received")
 		errb, _ := errors.UnmarshalJSON(body)
 		if len(errb) > 0 {
-			err = errf("invalid status received").status(resp.StatusCode).iri(id).annotate(errb[0])
+			err = errf("invalid status received").status(resp.StatusCode).iri(id).annotate(errors.Join(errb...))
 		} else {
-			err = errf("invalid status received").status(resp.StatusCode).iri(id)
+			// NOTE(marius): treat the body as a wrapped error
+			err = errf("invalid status received").status(resp.StatusCode).iri(id).annotate(fmt.Errorf("%s", body[:min(512, len(body))]))
 		}
 
 		return obj, err
@@ -207,7 +212,7 @@ func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 
 	it, err := vocab.UnmarshalJSON(body)
 	if err != nil {
-		return nil, errf("invalid ActivityPub object returned").annotate(err)
+		return nil, errf("invalid ActivityPub object returned").iri(id).annotate(err)
 	}
 
 	if it != nil {

@@ -238,8 +238,8 @@ func compareErrorsWithUrl(url string) func(x, y any) bool {
 		if errors.Is(xe, ye) || errors.Is(ye, xe) {
 			return true
 		}
-		xs := strings.ReplaceAll(xe.Error(), ": "+url, "")
-		ys := strings.ReplaceAll(ye.Error(), ": "+url, "")
+		xs := strings.ReplaceAll(xe.Error(), "http://example.com", url)
+		ys := strings.ReplaceAll(ye.Error(), "http://example.com", url)
 		return xs == ys
 	}
 }
@@ -576,7 +576,7 @@ func TestC_LoadIRI(t *testing.T) {
 		{
 			name:    "invalid IRI",
 			id:      ":",
-			wantErr: errf("trying to load an invalid IRI").annotate(errors.Newf(":: parse \":\": missing protocol scheme")),
+			wantErr: errf("trying to load an invalid IRI").iri(":").annotate(errors.Newf("parse \":\": missing protocol scheme")),
 		},
 		{
 			name:    "no valid handler",
@@ -606,7 +606,7 @@ func TestC_LoadIRI(t *testing.T) {
 				_, _ = w.Write([]byte(`{`))
 			},
 			id:      "http://example.com",
-			wantErr: errf("invalid ActivityPub object returned").annotate(errors.Newf("cannot parse JSON: cannot parse object: missing '}'; unparsed tail: \"\"")),
+			wantErr: errf("invalid ActivityPub object returned").iri("http://example.com").annotate(errors.Newf("cannot parse JSON: cannot parse object: missing '}'; unparsed tail: \"\"")),
 		},
 		{
 			name: "empty body but Gone",

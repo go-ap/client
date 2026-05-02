@@ -41,12 +41,15 @@ func (e cerr) Error() string {
 	s := strings.Builder{}
 	s.WriteString(e.msg)
 	if e.i != "" {
-		s.WriteString(": ")
-		s.WriteString(e.i.String())
+		s.WriteString(" (loading: \"")
+		s.WriteString(string(e.i))
+		s.WriteString("\")")
 	}
 	if e.err != nil {
-		s.WriteString(": ")
-		s.WriteString(e.err.Error())
+		if msg := e.err.Error(); len(msg) > 0 {
+			s.WriteString(": ")
+			s.WriteString(msg)
+		}
 	}
 	return s.String()
 }

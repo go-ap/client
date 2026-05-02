@@ -520,7 +520,7 @@ func TestC_Collection(t *testing.T) {
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
 		},
 		{
 			name:    "invalid collection type",
@@ -591,7 +591,7 @@ func TestC_Collection(t *testing.T) {
 			ctx := context.Background()
 			got, err := c.Collection(ctx, iri)
 			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri))) {
-				t.Errorf("Collection() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri))))
+				t.Errorf("Collection() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(srv.URL)))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
@@ -637,7 +637,7 @@ func TestC_Inbox(t *testing.T) {
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid/inbox not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
@@ -775,7 +775,7 @@ func TestC_Outbox(t *testing.T) {
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid/outbox not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
@@ -836,7 +836,7 @@ func TestC_Followers(t *testing.T) {
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid/followers not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
@@ -897,7 +897,7 @@ func TestC_Following(t *testing.T) {
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid/following not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
@@ -958,7 +958,7 @@ func TestC_Liked(t *testing.T) {
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid/liked not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
@@ -1019,7 +1019,7 @@ func TestC_Likes(t *testing.T) {
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid/likes not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
@@ -1080,7 +1080,7 @@ func TestC_Shares(t *testing.T) {
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid/shares not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
@@ -1141,7 +1141,7 @@ func TestC_Replies(t *testing.T) {
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid/replies not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
@@ -1202,7 +1202,7 @@ func TestC_Actor(t *testing.T) {
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid not found")), "unable to load actor"),
 		},
 		{
 			name: "jdoe",
@@ -1266,7 +1266,7 @@ func TestC_Object(t *testing.T) {
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid not found")), "unable to load object"),
 		},
 		{
 			name: "jdoe",
@@ -1340,7 +1340,7 @@ func TestC_Activity(t *testing.T) {
 			name:    "not empty",
 			path:    "/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid not found")), "unable to load activity"),
 		},
 		{
 			name: "jdoe",
