@@ -266,11 +266,11 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		if signFn == nil {
 			lastTry = true
 		} else {
-			lctx["keyType"] = fmt.Sprintf("%T", s.Key)
+			lctx["key-type"] = fmt.Sprintf("%T", s.Key)
 			if s.Actor != nil {
 				lctx["actor"] = s.Actor.ID
 				if s.Actor.PublicKey.ID != "" {
-					lctx["keyID"] = s.Actor.PublicKey.ID
+					lctx["key-id"] = s.Actor.PublicKey.ID
 				}
 			}
 			if err := signFn(req); err != nil {
@@ -295,10 +295,9 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		case http.StatusUnauthorized, http.StatusForbidden:
 			// NOTE(marius): Not an acceptable response status, so we want to try again.
 			// We also need to close the body of discarded response to avoid leaks.
+			body, _ := io.ReadAll(res.Body)
 			_ = res.Body.Close()
-			if s.l != nil {
-				s.l.WithContext(lctx).Errorf("received %s response", res.Status)
-			}
+			s.l.WithContext(lctx).Errorf("received %s response: %s", res.Status, body[:min(512, len(body))])
 			return nil, ErrRetry
 		default:
 			// NOTE(marius): some kind of success
