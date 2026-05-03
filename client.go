@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -166,7 +167,7 @@ func appendRelevantHeaders(lCtx lw.Ctx, hh http.Header) {
 	}
 }
 
-func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
+func (c *C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 	errCtx := Ctx{"IRI": id}
 	st := time.Now()
 	if len(id) == 0 {
@@ -235,22 +236,30 @@ func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 }
 
 // CtxLoadIRI tries to dereference an IRI and load the full ActivityPub object it represents
-func (c C) CtxLoadIRI(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
+func (c *C) CtxLoadIRI(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 	return c.loadCtx(ctx, id)
 }
 
 // LoadIRI tries to dereference an IRI and load the full ActivityPub object it represents
-func (c C) LoadIRI(id vocab.IRI) (vocab.Item, error) {
+func (c *C) LoadIRI(id vocab.IRI) (vocab.Item, error) {
 	return c.loadCtx(context.Background(), id)
 }
 
-func (c *C) req(ctx context.Context, method string, url, contentType string, body io.Reader) (*http.Request, error) {
+func (c *C) FetchRequest(ctx context.Context, url string) (*http.Request, error) {
+	return c.req(ctx, http.MethodGet, url, "", nil)
+}
+
+func (c *C) PostRequest(ctx context.Context, url, contentType string, body io.Reader) (*http.Request, error) {
+	return c.req(ctx, http.MethodPost, url, contentType, body)
+}
+
+func (c *C) req(ctx context.Context, method, url, contentType string, body io.Reader) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
 		return nil, err
 	}
 	req.Proto = "HTTP/2.0"
-	if method == http.MethodGet || method == http.MethodHead {
+	if slices.Contains([]string{http.MethodGet, http.MethodHead}, method) {
 		acceptedMediaTypes := []string{ContentTypeActivityJson, ContentTypeJsonLD, "application/json;q=0.9"}
 		req.Header.Add("Accept", strings.Join(acceptedMediaTypes, ", "))
 	} else {
