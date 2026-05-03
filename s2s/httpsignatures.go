@@ -35,13 +35,14 @@ var (
 type Transport struct {
 	Base http.RoundTripper
 
-	// Tag is an application-specific tag for the signature as a String value.
+	// RFC9421 relevant data
+	skipRFCSignatures bool
+	nonceFn           noncer
+	coveredComponents []string
+	// tag is an application-specific tag for the signature as a String value.
 	// This value is used by applications to help identify signatures relevant for specific applications or protocols.
 	// See: https://www.rfc-editor.org/rfc/rfc9421.html#section-2.3-4.12
-	Tag string
-
-	nonceFn           noncer
-	skipRFCSignatures bool
+	tag string
 
 	Key   crypto.PrivateKey
 	Actor *vocab.Actor
@@ -70,6 +71,13 @@ func WithNonce(nonceFn func() (string, error)) OptionFn {
 	}
 }
 
+func WithCoveredComponents(comp ...string) OptionFn {
+	return func(h *Transport) error {
+		h.coveredComponents = comp
+		return nil
+	}
+}
+
 func WithActor(act *vocab.Actor, prv crypto.PrivateKey) OptionFn {
 	return func(h *Transport) error {
 		h.Actor = act
@@ -88,7 +96,7 @@ func WithLogger(l lw.Logger) OptionFn {
 
 func WithApplicationTag(t string) OptionFn {
 	return func(h *Transport) error {
-		h.Tag = t
+		h.tag = t
 		return nil
 	}
 }
@@ -223,8 +231,8 @@ func (s *Transport) signRequestRFC(req *http.Request) error {
 		rfc.WithNonce(s.nonceFn),
 	}
 
-	if s.Tag != "" {
-		initFns = append(initFns, rfc.WithTag(s.Tag))
+	if s.tag != "" {
+		initFns = append(initFns, rfc.WithTag(s.tag))
 	}
 
 	switch req.Method {
@@ -259,7 +267,14 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if tr == nil {
 		tr = http.DefaultTransport
 	}
+	isFetchRequest := slices.Contains([]string{http.MethodGet, http.MethodHead}, req.Method)
 
+	if s.coveredComponents == nil {
+		s.coveredComponents = FetchCoveredComponents
+		if !isFetchRequest {
+			s.coveredComponents = PostCoveredComponents
+		}
+	}
 	roundTripFn := func(req *http.Request, signFn func(*http.Request) error) (*http.Response, error) {
 		lctx := lw.Ctx{}
 		lastTry := false
@@ -306,7 +321,6 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	or := *req
-	isFetchRequest := slices.Contains([]string{http.MethodGet, http.MethodHead}, req.Method)
 
 	if or.URL != nil && or.URL.Path == "" {
 		or.URL.Path = "/"

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -155,8 +156,8 @@ func TestWithApplicationTag(t *testing.T) {
 			if err := optionFn(tr); !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
 				t.Errorf("WithApplicationTag() = error %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
 			}
-			if tt.t != tr.Tag {
-				t.Errorf("WithApplicationTag() = %s, want %s", tr.Tag, tt.t)
+			if tt.t != tr.tag {
+				t.Errorf("WithApplicationTag() = %s, want %s", tr.tag, tt.t)
 			}
 		})
 	}
@@ -573,3 +574,31 @@ func compareItems(x, y any) bool {
 }
 
 var EquateItems = cmp.FilterValues(areItems, cmp.Comparer(compareItems))
+
+func TestWithCoveredComponents(t *testing.T) {
+	tests := []struct {
+		name    string
+		comp    []string
+		want    OptionFn
+		wantErr error
+	}{
+		{
+			name: "empty",
+			comp: nil,
+			want: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tr := new(Transport)
+			optionFn := WithCoveredComponents(tt.comp...)
+
+			if err := optionFn(tr); !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("WithCoveredComponents() = error %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			}
+			if !slices.Equal(tt.comp, tr.coveredComponents) {
+				t.Errorf("WithCoveredComponents() = %s, want %s", tr.coveredComponents, tt.comp)
+			}
+		})
+	}
+}
