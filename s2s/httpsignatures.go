@@ -275,22 +275,21 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			s.coveredComponents = PostCoveredComponents
 		}
 	}
-	roundTripFn := func(req *http.Request, signFn func(*http.Request) error) (*http.Response, error) {
-		lctx := lw.Ctx{}
+	roundTripFn := func(req *http.Request, signFn func(*http.Request) error, lc lw.Ctx) (*http.Response, error) {
 		lastTry := false
 		if signFn == nil {
 			lastTry = true
 		} else {
-			lctx["key-type"] = fmt.Sprintf("%T", s.Key)
+			lc["key-type"] = fmt.Sprintf("%T", s.Key)
 			if s.Actor != nil {
-				lctx["actor"] = s.Actor.ID
+				lc["actor"] = s.Actor.ID
 				if s.Actor.PublicKey.ID != "" {
-					lctx["key-id"] = s.Actor.PublicKey.ID
+					lc["key-id"] = s.Actor.PublicKey.ID
 				}
 			}
 			if err := signFn(req); err != nil {
 				if s.l != nil {
-					s.l.WithContext(lctx, lw.Ctx{"err": err.Error()}).Errorf("unable to sign request")
+					s.l.WithContext(lc, lw.Ctx{"err": err.Error()}).Errorf("unable to sign request")
 				}
 				return nil, ErrRetry
 			}
@@ -312,7 +311,7 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			// We also need to close the body of discarded response to avoid leaks.
 			body, _ := io.ReadAll(res.Body)
 			_ = res.Body.Close()
-			s.l.WithContext(lctx).Errorf("received %s response: %s", res.Status, body[:min(512, len(body))])
+			s.l.WithContext(lc).Errorf("received %s response: %s", res.Status, body[:min(512, len(body))])
 			return nil, ErrRetry
 		default:
 			// NOTE(marius): some kind of success
@@ -326,6 +325,7 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		or.URL.Path = "/"
 	}
 
+	lctx := lw.Ctx{}
 	var res *http.Response
 	var err error
 	if s.Actor != nil && s.Key != nil {
@@ -337,8 +337,10 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			}
 		}
 		if !s.skipRFCSignatures {
+			lctx["tries"] = 0
+			lctx["sig-alg"] = "rfc9421"
 			// NOTE(marius): try #1: use RFC9421 signature
-			res, err = roundTripFn(cloneRequest(&or, buff), s.signRequestRFC)
+			res, err = roundTripFn(cloneRequest(&or, buff), s.signRequestRFC, lctx)
 			if err == nil || !errors.Is(err, ErrRetry) {
 				return res, err
 			}
@@ -348,7 +350,9 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		// NOTE(marius): try #2: use Cavage-12 draft signature
-		res, err = roundTripFn(cloneRequest(&or, buff), s.signRequestDraft)
+		lctx["tries"] = 1
+		lctx["sig-alg"] = "draft"
+		res, err = roundTripFn(cloneRequest(&or, buff), s.signRequestDraft, lctx)
 		if err == nil || !errors.Is(err, ErrRetry) {
 			return res, err
 		}
@@ -366,11 +370,13 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	if isFetchRequest {
+		lctx["tries"] = 2
+		lctx["sig-alg"] = "none"
 		// NOTE(marius): This is a mitigation for loading Public Keys for Actors on other instances,
 		// which can create an infinite loop of requests if that instance tries to do an authorize-fetch
 		// for our signing Actor.
 		// There are more details in ticket: https://todo.sr.ht/~mariusor/go-activitypub/301
-		return roundTripFn(&or, nil)
+		return roundTripFn(&or, nil, lctx)
 	}
 
 	return nil, errors.Unauthorizedf("unauthorized")
