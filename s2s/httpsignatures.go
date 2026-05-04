@@ -306,6 +306,10 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			// return a 403 or 401 error status on failing signatures
 			// See https://todo.sr.ht/~mariusor/go-activitypub/473
 			fallthrough
+		case http.StatusServiceUnavailable:
+			// NOTE(marius): this is a hack for mastoart.social
+			// which returns a 503 if it encountered previous errors.
+			fallthrough
 		case http.StatusUnauthorized, http.StatusForbidden:
 			// NOTE(marius): Not an acceptable response status, so we want to try again.
 			// We also need to close the body of discarded response to avoid leaks.
