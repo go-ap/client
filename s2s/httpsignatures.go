@@ -208,50 +208,51 @@ func rfcAlgorithmFromPrivateKey(key crypto.PrivateKey) rfc.SignatureAlgorithm {
 	return alg
 }
 
-func (s *Transport) signRequestRFC(req *http.Request) error {
-	if s.Actor == nil {
-		return errors.Newf("unable to sign request, Actor is invalid")
-	}
-	if s.Key == nil {
-		return errors.Newf("unable to sign request, private key is invalid")
-	}
+func (s *Transport) signRequestRFC(coveredComponents []string) func(req *http.Request) error {
+	return func(req *http.Request) error {
+		if s.Actor == nil {
+			return errors.Newf("unable to sign request, Actor is invalid")
+		}
+		if s.Key == nil {
+			return errors.Newf("unable to sign request, private key is invalid")
+		}
 
-	if err := validateActorPublicKey(s.Key, *s.Actor); err != nil {
-		return errors.Annotatef(err, "unable to sign request, Actor public key does not match it's private key")
-	}
+		if err := validateActorPublicKey(s.Key, *s.Actor); err != nil {
+			return errors.Annotatef(err, "unable to sign request, Actor public key does not match it's private key")
+		}
 
-	key := rfc.Key{
-		KeyID:     string(s.Actor.PublicKey.ID),
-		Algorithm: rfcAlgorithmFromPrivateKey(s.Key),
-		Key:       s.Key,
-	}
+		key := rfc.Key{
+			KeyID:     string(s.Actor.PublicKey.ID),
+			Algorithm: rfcAlgorithmFromPrivateKey(s.Key),
+			Key:       s.Key,
+		}
 
-	initFns := []rfc.SignerOption{
-		rfc.WithTTL(sigValidDuration),
-		rfc.WithNonce(s.nonceFn),
-	}
+		initFns := []rfc.SignerOption{
+			rfc.WithTTL(sigValidDuration),
+			rfc.WithNonce(s.nonceFn),
+		}
 
-	if s.tag != "" {
-		initFns = append(initFns, rfc.WithTag(s.tag))
-	}
+		if s.tag != "" {
+			initFns = append(initFns, rfc.WithTag(s.tag))
+		}
 
-	switch req.Method {
-	case http.MethodHead, http.MethodGet:
-		initFns = append(initFns, rfc.WithComponents(FetchCoveredComponents...))
-	case http.MethodPost:
-		initFns = append(initFns, rfc.WithComponents(PostCoveredComponents...))
-		initFns = append(initFns, rfc.WithContentDigestAlgorithm(rfc.Sha256))
+		if coveredComponents != nil {
+			initFns = append(initFns, rfc.WithComponents(coveredComponents...))
+		}
+		if req.Method == http.MethodPost {
+			initFns = append(initFns, rfc.WithContentDigestAlgorithm(rfc.Sha256))
+		}
+		signer, err := rfc.NewSigner(key, initFns...)
+		if err != nil {
+			return err
+		}
+		postSignHeaders, err := signer.Sign(rfc.MessageFromRequest(req))
+		if err != nil {
+			return err
+		}
+		req.Header = postSignHeaders
+		return nil
 	}
-	signer, err := rfc.NewSigner(key, initFns...)
-	if err != nil {
-		return err
-	}
-	postSignHeaders, err := signer.Sign(rfc.MessageFromRequest(req))
-	if err != nil {
-		return err
-	}
-	req.Header = postSignHeaders
-	return nil
 }
 
 var ErrRetry = errors.Newf("retry")
@@ -269,14 +270,16 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	isFetchRequest := slices.Contains([]string{http.MethodGet, http.MethodHead}, req.Method)
 
-	if s.coveredComponents == nil {
-		s.coveredComponents = FetchCoveredComponents
-		if !isFetchRequest {
-			s.coveredComponents = PostCoveredComponents
-		}
+	coveredComponents := s.coveredComponents
+	if coveredComponents == nil {
+		coveredComponents = FetchCoveredComponents
 	}
-	roundTripFn := func(req *http.Request, signFn func(*http.Request) error, lc lw.Ctx) (*http.Response, error) {
+	if !isFetchRequest {
+		coveredComponents = append(coveredComponents, PostCoveredComponents...)
+	}
+	roundTripFn := func(req *http.Request, signFn func(*http.Request) error, l lw.Logger) (*http.Response, error) {
 		lastTry := false
+		lc := lw.Ctx{}
 		if signFn == nil {
 			lastTry = true
 		} else {
@@ -288,9 +291,8 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 				}
 			}
 			if err := signFn(req); err != nil {
-				if s.l != nil {
-					s.l.WithContext(lc, lw.Ctx{"err": err.Error()}).Errorf("unable to sign request")
-				}
+				lc["err"] = err
+				l.WithContext(lc).Errorf("failed to sign request")
 				return nil, ErrRetry
 			}
 		}
@@ -315,7 +317,9 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			// We also need to close the body of discarded response to avoid leaks.
 			body, _ := io.ReadAll(res.Body)
 			_ = res.Body.Close()
-			s.l.WithContext(lc).Errorf("received %s response: %s", res.Status, body[:min(512, len(body))])
+			lc["status"] = res.StatusCode
+			lc["body"] = string(body[:min(512, len(body))])
+			l.WithContext(lc).Errorf("error response from remote server")
 			return nil, ErrRetry
 		default:
 			// NOTE(marius): some kind of success
@@ -344,7 +348,7 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			lctx["tries"] = 0
 			lctx["sig-alg"] = "rfc9421"
 			// NOTE(marius): try #1: use RFC9421 signature
-			res, err = roundTripFn(cloneRequest(&or, buff), s.signRequestRFC, lctx)
+			res, err = roundTripFn(cloneRequest(&or, buff), s.signRequestRFC(coveredComponents), s.l.WithContext(lctx))
 			if err == nil || !errors.Is(err, ErrRetry) {
 				return res, err
 			}
@@ -356,7 +360,7 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		// NOTE(marius): try #2: use Cavage-12 draft signature
 		lctx["tries"] = 1
 		lctx["sig-alg"] = "draft"
-		res, err = roundTripFn(cloneRequest(&or, buff), s.signRequestDraft, lctx)
+		res, err = roundTripFn(cloneRequest(&or, buff), s.signRequestDraft, s.l.WithContext(lctx))
 		if err == nil || !errors.Is(err, ErrRetry) {
 			return res, err
 		}
@@ -380,7 +384,7 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		// which can create an infinite loop of requests if that instance tries to do an authorize-fetch
 		// for our signing Actor.
 		// There are more details in ticket: https://todo.sr.ht/~mariusor/go-activitypub/301
-		return roundTripFn(&or, nil, lctx)
+		return roundTripFn(&or, nil, s.l.WithContext(lctx))
 	}
 
 	return nil, errors.Unauthorizedf("unauthorized")
