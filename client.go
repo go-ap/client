@@ -199,7 +199,7 @@ func (c *C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusGone {
-		c.l.WithContext(errCtx, Ctx{"err": err}).Errorf("error response received")
+		c.l.WithContext(errCtx).Errorf("error response received")
 		errb, _ := errors.UnmarshalJSON(body)
 		if len(errb) > 0 {
 			err = errf("invalid status received").status(resp.StatusCode).iri(id).annotate(errors.Join(errb...))
