@@ -630,6 +630,8 @@ func TestC_LoadIRI(t *testing.T) {
 			}
 
 			srv := httptest.NewServer(tt.handlerFn)
+			defer srv.Close()
+
 			if tt.id != "" {
 				u, err := url.Parse(string(tt.id))
 				if err == nil {

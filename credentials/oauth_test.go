@@ -567,6 +567,7 @@ func Test_waitForOAuth2Callback(t *testing.T) {
 			}
 
 			srv := httptest.NewServer(tt.handlerFn)
+			defer srv.Close()
 
 			conf.Endpoint = oauth2.Endpoint{
 				AuthURL:  srv.URL + "/auth",
@@ -926,6 +927,8 @@ func TestAuthorize(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := httptest.NewServer(tt.handlerFn)
+			defer srv.Close()
+
 			if tt.args.actorURL != "" {
 				u, err := url.Parse(tt.args.actorURL)
 				if err == nil {
