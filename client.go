@@ -181,7 +181,7 @@ func (c *C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 
 	var resp *http.Response
 	if resp, err = c.CtxGet(ctx, id.String()); err != nil {
-		c.l.WithContext(errCtx, Ctx{"err": err}).Errorf("failed to load IRI")
+		c.l.WithContext(errCtx, Ctx{"err": fmt.Sprintf("%+v", err)}).Errorf("failed to load IRI")
 		return obj, err
 	}
 
