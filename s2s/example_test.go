@@ -152,7 +152,7 @@ func (m mockKeyResolver) ResolveKey(_ context.Context, keyID string) (httpsig.Ke
 
 type mockNonceChecker bool
 
-func (n mockNonceChecker) CheckNonce(ctx context.Context, nonce string) error {
+func (n mockNonceChecker) CheckNonce(_ context.Context, _ httpsig.NonceValue) error {
 	if n {
 		return nil
 	}
