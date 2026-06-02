@@ -3,12 +3,12 @@ module github.com/go-ap/client
 go 1.25.0
 
 require (
-	git.sr.ht/~mariusor/cache v0.0.0-20250616110250-18a60a6f9473
+	git.sr.ht/~mariusor/cache v0.0.0-20260516133819-5427e9c3067b
 	git.sr.ht/~mariusor/lw v0.0.0-20250325163623-1639f3fb0e0d
 	github.com/dadrus/httpsig v0.9.0
-	github.com/go-ap/activitypub v0.0.0-20260416122353-fb80985e153a
+	github.com/go-ap/activitypub v0.0.0-20260602080815-739274c2fcce
 	github.com/go-ap/errors v0.0.0-20260208110149-e1b309365966
-	github.com/go-ap/filters v0.0.0-20260416122840-724cb3c8974c
+	github.com/go-ap/filters v0.0.0-20260602081319-5ed1fa02cd11
 	github.com/go-ap/jsonld v0.0.0-20251216162253-e38fa664ea77
 	github.com/go-fed/httpsig v1.1.0
 	github.com/google/go-cmp v0.7.0
@@ -29,11 +29,11 @@ require (
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/dunglas/httpsfv v1.1.0 // indirect
-	github.com/go-chi/chi/v5 v5.2.5 // indirect
+	github.com/go-chi/chi/v5 v5.3.0 // indirect
 	github.com/jdkato/prose v1.2.1 // indirect
 	github.com/leporo/sqlf v1.4.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
-	github.com/mattn/go-colorable v0.1.14 // indirect
+	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/mattn/go-runewidth v0.0.22 // indirect
 	github.com/mattn/goveralls v0.0.12 // indirect
@@ -47,9 +47,9 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fastjson v1.6.10 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	golang.org/x/crypto v0.51.0 // indirect
+	golang.org/x/crypto v0.52.0 // indirect
 	golang.org/x/mod v0.35.0 // indirect
-	golang.org/x/sys v0.44.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/term v0.43.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/tools v0.44.0 // indirect
