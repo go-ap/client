@@ -15,7 +15,6 @@ import (
 	"io"
 	"net/http"
 	"slices"
-	"strings"
 	"time"
 
 	"git.sr.ht/~mariusor/lw"
@@ -119,22 +118,6 @@ func New(initFns ...OptionFn) *Transport {
 
 type privateKey interface {
 	Public() crypto.PublicKey
-}
-
-func pemEncodePrivateKey(prvKey crypto.PrivateKey) string {
-	prv, ok := prvKey.(privateKey)
-	if !ok {
-		return fmt.Sprintf("invalid private key: %T", prvKey)
-	}
-	pubEnc, err := x509.MarshalPKIXPublicKey(prv.Public())
-	if err != nil {
-		return "invalid public key: %s" + err.Error()
-	}
-	p := pem.Block{
-		Type:  "PUBLIC KEY",
-		Bytes: pubEnc,
-	}
-	return strings.ReplaceAll(string(pem.EncodeToMemory(&p)), "\n", "")
 }
 
 func randomNonce() (string, error) {
@@ -260,7 +243,7 @@ var ErrRetry = errors.Newf("retry")
 // RoundTrip dispatches the received request after signing it.
 // We currently use the double knocking mechanism Mastodon popularized:
 // * we first attempt to sign the request with RFC9421 compliant signature,
-// * if it failed, we try again using a draft Cavage-12 version signature.
+// * if it failed, we try again using a Cavage draft 8 version signature.
 // Additionally, if everything failed, and we're operating with a fetch request,
 // we make one last, non-signed attempt.
 func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -296,6 +279,7 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 				return nil, ErrRetry
 			}
 		}
+		lc["host"] = req.URL.Hostname()
 
 		res, err := tr.RoundTrip(req)
 		if lastTry || err != nil {
@@ -314,11 +298,7 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			fallthrough
 		case http.StatusUnauthorized, http.StatusForbidden:
 			// NOTE(marius): Not an acceptable response status, so we want to try again.
-			// We also need to close the body of discarded response to avoid leaks.
-			body, _ := io.ReadAll(res.Body)
-			_ = res.Body.Close()
 			lc["status"] = res.StatusCode
-			lc["body"] = string(body[:min(512, len(body))])
 			l.WithContext(lc).Errorf("error response from remote server")
 			return nil, ErrRetry
 		default:
