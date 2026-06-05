@@ -8,14 +8,13 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"slices"
-	"strings"
 	"time"
 
 	"git.sr.ht/~mariusor/cache"
 	"git.sr.ht/~mariusor/lw"
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/client/debug"
+	"github.com/go-ap/client/internal/requests"
 	"github.com/go-ap/client/s2s"
 	"github.com/go-ap/errors"
 	"github.com/go-ap/jsonld"
@@ -36,16 +35,7 @@ type Basic interface {
 }
 
 // UserAgent value that the client uses when performing requests
-var UserAgent = "GoActivityPub DefaultClient (https://github.com/go-ap)"
-
-const (
-	ContentTypeJsonLD = `application/ld+json; profile="https://www.w3.org/ns/activitystreams"`
-	// ContentTypeActivityJson This specification registers the application/activity+json MIME Media Type
-	// specifically for identifying documents conforming to the Activity Streams 2.0 format.
-	//
-	// https://www.w3.org/TR/activitystreams-core/#media-type
-	ContentTypeActivityJson = `application/activity+json`
-)
+var UserAgent = "go-ap-client (+https://github.com/go-ap)"
 
 // defaultLogger is a nil logging function that is set as default.
 var defaultLogger = lw.Nil()
@@ -246,57 +236,29 @@ func (c *C) LoadIRI(id vocab.IRI) (vocab.Item, error) {
 }
 
 func (c *C) FetchRequest(ctx context.Context, url string) (*http.Request, error) {
-	return c.req(ctx, http.MethodGet, url, "", nil)
+	return FetchRequest(ctx, url, http.MethodGet)
 }
 
 func (c *C) PostRequest(ctx context.Context, url, contentType string, body io.Reader) (*http.Request, error) {
-	return c.req(ctx, http.MethodPost, url, contentType, body)
-}
-
-func (c *C) req(ctx context.Context, method, url, contentType string, body io.Reader) (*http.Request, error) {
-	req, err := http.NewRequestWithContext(ctx, method, url, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Proto = "HTTP/2.0"
-	if slices.Contains([]string{http.MethodGet, http.MethodHead}, method) {
-		acceptedMediaTypes := []string{ContentTypeActivityJson, ContentTypeJsonLD, "application/json;q=0.9"}
-		req.Header.Add("Accept", strings.Join(acceptedMediaTypes, ", "))
-	} else {
-		if len(contentType) == 0 {
-			contentType = ContentTypeJsonLD
-		}
-		req.Header.Set("Content-Type", contentType)
-	}
-	if date := req.Header.Get("Date"); date == "" {
-		req.Header.Set("Date", time.Now().UTC().Format(http.TimeFormat))
-	}
-	if host := req.Header.Get("Host"); host == "" {
-		req.Header.Set("Host", req.URL.Host)
-	}
-	return req, nil
+	return ActivityPubRequest(ctx, url, contentType, body)
 }
 
 func (c *C) Do(req *http.Request) (*http.Response, error) {
-	return c.c.Do(req)
-}
-
-func (c C) do(ctx context.Context, url, method, contentType string, body io.Reader) (*http.Response, error) {
 	if c.c == nil {
 		c.c = defaultClient
 	}
-	req, err := c.req(ctx, method, url, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	return c.Do(req)
+	return c.c.Do(req)
 }
 
 const contentTypeAny = "*/*"
 
 // CtxGet wrapper over the functionality offered by the default http.Client object
 func (c C) CtxGet(ctx context.Context, url string) (*http.Response, error) {
-	return c.do(ctx, url, http.MethodGet, contentTypeAny, nil)
+	req, err := FetchRequest(ctx, url, http.MethodGet)
+	if err != nil {
+		return nil, err
+	}
+	return c.Do(req)
 }
 
 func (c C) toCollections(ctx context.Context, act vocab.Item, colIRI ...vocab.IRI) (vocab.IRI, vocab.Item, error) {
@@ -342,7 +304,11 @@ func (c C) toCollection(ctx context.Context, act vocab.Item, colIRI vocab.IRI) (
 	}
 	var resp *http.Response
 	var resultIRI vocab.IRI
-	resp, err = c.do(ctx, string(colIRI), http.MethodPost, ContentTypeActivityJson, bytes.NewReader(body))
+	req, err := ActivityPubRequest(ctx, string(colIRI), requests.ContentTypeActivityJson, bytes.NewReader(body))
+	if err != nil {
+		return resultIRI, nil, err
+	}
+	resp, err = c.Do(req)
 	if err != nil {
 		return resultIRI, nil, err
 	}

@@ -682,10 +682,10 @@ func TestC_Inbox(t *testing.T) {
 	}
 }
 
-func mockActor(id vocab.IRI, name string) *vocab.Actor {
-	id = id.AddPath("~" + name)
+func mockActor(base vocab.IRI, name string) *vocab.Actor {
+	id := base.AddPath("~" + name)
 	return &vocab.Actor{
-		ID:                id,
+		ID:                base,
 		PreferredUsername: vocab.DefaultNaturalLanguage(name),
 		Type:              vocab.PersonType,
 		Outbox:            vocab.Outbox.IRI(id),
@@ -1426,19 +1426,13 @@ func TestC_ToOutbox(t *testing.T) {
 		},
 		{
 			name:    "withValidActivity",
-			toSend:  mockActivity(),
+			toSend:  mockActivity(mockActor("http://example.com", "jdoe")),
 			wantIRI: "",
 			wantIt:  nil,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := C{
-				c: defaultClient,
-				l: lw.Dev(lw.SetOutput(t.Output())),
-			}
-			ctx := context.Background()
-
 			name := "jdoe"
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != filepath.Join("/~"+name, "outbox") {
@@ -1450,13 +1444,12 @@ func TestC_ToOutbox(t *testing.T) {
 				_, _ = w.Write(raw)
 			}))
 			defer srv.Close()
+			c := C{
+				c: srv.Client(),
+				l: lw.Dev(lw.SetOutput(t.Output())),
+			}
 
-			_ = vocab.OnIntransitiveActivity(tt.toSend, func(act *vocab.IntransitiveActivity) error {
-				act.Actor = mockActor(vocab.IRI(srv.URL), name)
-				return nil
-			})
-
-			gotIRI, gotIt, err := c.ToOutbox(ctx, tt.toSend)
+			gotIRI, gotIt, err := c.ToOutbox(context.Background(), tt.toSend)
 			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors("")) {
 				t.Errorf("Outbox() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors("")))
 				return
@@ -1489,19 +1482,13 @@ func TestC_ToInbox(t *testing.T) {
 		},
 		{
 			name:    "withValidActivity",
-			toSend:  mockActivity(),
+			toSend:  mockActivity(mockActor("http://example.com", "jdoe")),
 			wantIRI: "",
 			wantIt:  nil,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := C{
-				c: defaultClient,
-				l: lw.Dev(lw.SetOutput(t.Output())),
-			}
-			ctx := context.Background()
-
 			name := "jdoe"
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != filepath.Join("/~"+name, "inbox") {
@@ -1514,12 +1501,12 @@ func TestC_ToInbox(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			_ = vocab.OnIntransitiveActivity(tt.toSend, func(act *vocab.IntransitiveActivity) error {
-				act.Actor = mockActor(vocab.IRI(srv.URL), name)
-				return nil
-			})
+			c := C{
+				c: srv.Client(),
+				l: lw.Dev(lw.SetOutput(t.Output())),
+			}
 
-			gotIRI, gotIt, err := c.ToInbox(ctx, tt.toSend)
+			gotIRI, gotIt, err := c.ToInbox(context.Background(), tt.toSend)
 			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors("")) {
 				t.Errorf("Inbox() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors("")))
 				return

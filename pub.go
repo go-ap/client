@@ -189,11 +189,11 @@ func (c C) ToOutbox(ctx context.Context, act vocab.Item) (vocab.IRI, vocab.Item,
 }
 
 func (c C) ToInbox(ctx context.Context, act vocab.Item) (vocab.IRI, vocab.Item, error) {
-	outboxes, err := ActivityActorTargetCollections(act, inbox)
+	inboxes, err := ActivityActorTargetCollections(act, inbox)
 	if err != nil {
 		return "", nil, err
 	}
-	return c.CtxToCollection(ctx, act, outboxes...)
+	return c.CtxToCollection(ctx, act, inboxes...)
 }
 
 func validateIRIForRequest(i vocab.IRI) error {

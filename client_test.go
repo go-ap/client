@@ -109,8 +109,7 @@ func Test_getTransportWithTLSValidation(t *testing.T) {
 		},
 		{
 			name: "empty s2s, skip true",
-			args: args{rt: &s2s.Transport{}, skip: true,
-			},
+			args: args{rt: &s2s.Transport{}, skip: true},
 			// NOTE(marius): this is defaultTransport with InsecureSkipVerify set to true
 			want: &s2s.Transport{Base: uaTransport{
 				Base: &http.Transport{
@@ -363,7 +362,6 @@ func TestC_ToCollection(t *testing.T) {
 	}
 	tests := []struct {
 		name    string
-		client  httpClient
 		args    args
 		wantIRI vocab.IRI
 		wantIt  vocab.Item
@@ -371,7 +369,6 @@ func TestC_ToCollection(t *testing.T) {
 	}{
 		{
 			name:    "empty",
-			client:  nil,
 			args:    args{},
 			wantIRI: "",
 			wantIt:  nil,
@@ -400,17 +397,19 @@ func TestC_ToCollection(t *testing.T) {
 
 			name := "jdoe"
 			toCollections := make(vocab.IRIs, 0, len(tt.args.colPaths))
+
+			actor := mockActor("http://example.com", name)
 			_ = vocab.OnIntransitiveActivity(tt.args.toSend, func(act *vocab.IntransitiveActivity) error {
-				act.Actor = mockActor(vocab.IRI(srv.URL), name)
+				act.Actor = actor
 				return nil
 			})
 
 			for _, col := range tt.args.colPaths {
-				toCollections = append(toCollections, col.IRI(vocab.IRI(srv.URL).AddPath(name)))
+				toCollections = append(toCollections, col.IRI(actor))
 			}
 
 			c := C{
-				c: tt.client,
+				c: srv.Client(),
 				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
@@ -542,7 +541,8 @@ func TestC_toCollection(t *testing.T) {
 			if tt.args.colPath != "" {
 				srv := httptest.NewServer(tt.handlerFn)
 				defer srv.Close()
-				colIRI = tt.args.colPath.IRI(vocab.IRI(srv.URL))
+				colIRI = tt.args.colPath.IRI(tt.args.act)
+				c.c = srv.Client()
 			}
 
 			gotIRI, gotIt, err := c.toCollection(tt.args.ctx, tt.args.act, colIRI)
