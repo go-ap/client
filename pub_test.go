@@ -507,7 +507,7 @@ func Test_validateIRIForRequest(t *testing.T) {
 func TestC_Collection(t *testing.T) {
 	tests := []struct {
 		name    string
-		path    string
+		iri     vocab.IRI
 		col     vocab.Item
 		want    vocab.CollectionInterface
 		wantErr error
@@ -518,60 +518,55 @@ func TestC_Collection(t *testing.T) {
 		},
 		{
 			name:    "not empty",
-			path:    "/invalid",
+			iri:     "http://example.com/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com/invalid").annotate(errors.NotFoundf("/invalid not found")), "unable to load"),
 		},
 		{
 			name:    "invalid collection type",
-			path:    "/inbox",
+			iri:     "http://example.com/inbox",
 			col:     &vocab.Collection{ID: "http://example.com/~jdoe/inbox", Type: vocab.NoteType, TotalItems: 0, AttributedTo: vocab.IRI("http://example.com/~jdoe")},
 			wantErr: errf("response item type is not a valid collection: \"Note\""),
 		},
 		{
 			name: "ordered collection",
-			path: "/inbox",
+			iri:  "http://example.com/inbox",
 			col:  &vocab.OrderedCollection{ID: "http://example.com/~jdoe/inbox", Type: vocab.OrderedCollectionType, TotalItems: 0, AttributedTo: vocab.IRI("http://example.com/~jdoe")},
 			want: &vocab.OrderedCollection{ID: "http://example.com/~jdoe/inbox", Type: vocab.OrderedCollectionType, TotalItems: 0, AttributedTo: vocab.IRI("http://example.com/~jdoe")},
 		},
 		{
 			name: "ordered collection page",
-			path: "/inbox",
+			iri:  "http://example.com/inbox",
 			col:  &vocab.OrderedCollectionPage{ID: "http://example.com/~jdoe/inbox?type=Create", Type: vocab.OrderedCollectionPageType, TotalItems: 1, AttributedTo: vocab.IRI("http://example.com/~jdoe"), OrderedItems: vocab.ItemCollection{vocab.IRI("http://example.com")}},
 			want: &vocab.OrderedCollectionPage{ID: "http://example.com/~jdoe/inbox?type=Create", Type: vocab.OrderedCollectionPageType, TotalItems: 1, AttributedTo: vocab.IRI("http://example.com/~jdoe"), OrderedItems: vocab.ItemCollection{vocab.IRI("http://example.com")}},
 		},
 		{
 			name: "collection",
-			path: "/inbox",
+			iri:  "http://example.com/inbox",
 			col:  &vocab.Collection{ID: "http://example.com/~jdoe/inbox", Type: vocab.CollectionType, TotalItems: 0, AttributedTo: vocab.IRI("http://example.com/~jdoe")},
 			want: &vocab.Collection{ID: "http://example.com/~jdoe/inbox", Type: vocab.CollectionType, TotalItems: 0, AttributedTo: vocab.IRI("http://example.com/~jdoe")},
 		},
 		{
 			name: "collection page",
-			path: "/inbox",
+			iri:  "http://example.com/inbox",
 			col:  &vocab.CollectionPage{ID: "http://example.com/~jdoe/inbox?type=Create", Type: vocab.CollectionPageType, TotalItems: 1, AttributedTo: vocab.IRI("http://example.com/~jdoe"), Items: vocab.ItemCollection{vocab.IRI("http://example.com")}},
 			want: &vocab.CollectionPage{ID: "http://example.com/~jdoe/inbox?type=Create", Type: vocab.CollectionPageType, TotalItems: 1, AttributedTo: vocab.IRI("http://example.com/~jdoe"), Items: vocab.ItemCollection{vocab.IRI("http://example.com")}},
 		},
 		{
 			name: "items",
-			path: "/inbox",
+			iri:  "http://example.com/inbox",
 			col:  vocab.ItemCollection{vocab.IRI("http://example.com"), &vocab.Object{ID: "http://example.com/1", Type: vocab.NoteType}},
 			want: &vocab.ItemCollection{vocab.IRI("http://example.com"), &vocab.Object{ID: "http://example.com/1", Type: vocab.NoteType}},
 		},
 		{
 			name: "iris",
-			path: "/inbox",
+			iri:  "http://example.com/inbox",
 			col:  vocab.IRIs{vocab.IRI("http://example.com"), vocab.IRI("http://example.com/1")},
 			want: &vocab.ItemCollection{vocab.IRI("http://example.com"), vocab.IRI("http://example.com/1")},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := C{
-				c: defaultClient,
-				l: lw.Dev(lw.SetOutput(t.Output())),
-			}
-
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/inbox" {
 					errors.NotFound.ServeHTTP(w, r)
@@ -583,14 +578,14 @@ func TestC_Collection(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			var iri vocab.IRI
-			if tt.path != "" {
-				iri = vocab.IRI(srv.URL).AddPath(tt.path)
+			c := C{
+				c: srv.Client(),
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
 			ctx := context.Background()
-			got, err := c.Collection(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri))) {
+			got, err := c.Collection(ctx, tt.iri)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(srv.URL)) {
 				t.Errorf("Collection() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(srv.URL)))
 				return
 			}
@@ -624,7 +619,7 @@ var EquateItems = cmp.FilterValues(areItems, cmp.Comparer(compareItems))
 func TestC_Inbox(t *testing.T) {
 	tests := []struct {
 		name    string
-		path    string
+		iri     vocab.IRI
 		actor   vocab.Item
 		want    vocab.CollectionInterface
 		wantErr error
@@ -635,24 +630,19 @@ func TestC_Inbox(t *testing.T) {
 		},
 		{
 			name:    "not empty",
-			path:    "/invalid",
+			iri:     "http://example.com/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid/inbox not found")), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com/invalid/inbox").annotate(errors.NotFoundf("/invalid/inbox not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
-			path:  "/",
+			iri:   "http://example.com/",
 			actor: mockActor("http://example.com/", "jdoe"),
 			want:  mockCollection("jdoe", vocab.Inbox),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := C{
-				c: defaultClient,
-				l: lw.Dev(lw.SetOutput(t.Output())),
-			}
-
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/inbox" {
 					errors.NotFound.ServeHTTP(w, r)
@@ -664,15 +654,14 @@ func TestC_Inbox(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			ctx := context.Background()
-			var iri vocab.IRI
-			if tt.path != "" {
-				iri = vocab.IRI(srv.URL).AddPath(tt.path)
+			c := C{
+				c: srv.Client(),
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
-			got, err := c.Inbox(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri)+"/inbox")) {
-				t.Errorf("Inbox() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri)+"/inbox")))
+			got, err := c.Inbox(context.Background(), tt.iri)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(srv.URL)) {
+				t.Errorf("Inbox() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(srv.URL)))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
@@ -762,7 +751,7 @@ func mockCollection(name string, c vocab.CollectionPath) vocab.CollectionInterfa
 func TestC_Outbox(t *testing.T) {
 	tests := []struct {
 		name    string
-		path    string
+		iri     vocab.IRI
 		actor   vocab.Item
 		want    vocab.CollectionInterface
 		wantErr error
@@ -773,24 +762,19 @@ func TestC_Outbox(t *testing.T) {
 		},
 		{
 			name:    "not empty",
-			path:    "/invalid",
+			iri:     "http://example.com/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid/outbox not found")), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com/invalid/outbox").annotate(errors.NotFoundf("/invalid/outbox not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
-			path:  "/",
+			iri:   "http://example.com/",
 			actor: mockActor("http://example.com/", "jdoe"),
 			want:  mockCollection("jdoe", vocab.Outbox),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := C{
-				c: defaultClient,
-				l: lw.Dev(lw.SetOutput(t.Output())),
-			}
-
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/outbox" {
 					errors.NotFound.ServeHTTP(w, r)
@@ -801,16 +785,14 @@ func TestC_Outbox(t *testing.T) {
 				_, _ = w.Write(raw)
 			}))
 			defer srv.Close()
-
-			ctx := context.Background()
-			var iri vocab.IRI
-			if tt.path != "" {
-				iri = vocab.IRI(srv.URL).AddPath(tt.path)
+			c := C{
+				c: srv.Client(),
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
-			got, err := c.Outbox(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri)+"/outbox")) {
-				t.Errorf("Outbox() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri)+"/outbox")))
+			got, err := c.Outbox(context.Background(), tt.iri)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(srv.URL)) {
+				t.Errorf("Outbox() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(srv.URL)))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
@@ -823,7 +805,7 @@ func TestC_Outbox(t *testing.T) {
 func TestC_Followers(t *testing.T) {
 	tests := []struct {
 		name    string
-		path    string
+		iri     vocab.IRI
 		actor   vocab.Item
 		want    vocab.CollectionInterface
 		wantErr error
@@ -834,24 +816,19 @@ func TestC_Followers(t *testing.T) {
 		},
 		{
 			name:    "not empty",
-			path:    "/invalid",
+			iri:     "http://example.com/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid/followers not found")), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com/invalid/followers").annotate(errors.NotFoundf("/invalid/followers not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
-			path:  "/",
+			iri:   "http://example.com/",
 			actor: mockActor("http://example.com/", "jdoe"),
 			want:  mockCollection("jdoe", vocab.Followers),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := C{
-				c: defaultClient,
-				l: lw.Dev(lw.SetOutput(t.Output())),
-			}
-
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/followers" {
 					errors.NotFound.ServeHTTP(w, r)
@@ -862,16 +839,14 @@ func TestC_Followers(t *testing.T) {
 				_, _ = w.Write(raw)
 			}))
 			defer srv.Close()
-
-			ctx := context.Background()
-			var iri vocab.IRI
-			if tt.path != "" {
-				iri = vocab.IRI(srv.URL).AddPath(tt.path)
+			c := C{
+				c: srv.Client(),
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
-			got, err := c.Followers(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri)+"/followers")) {
-				t.Errorf("Followers() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri)+"/followers")))
+			got, err := c.Followers(context.Background(), tt.iri)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(srv.URL)) {
+				t.Errorf("Followers() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(srv.URL)))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
@@ -884,7 +859,7 @@ func TestC_Followers(t *testing.T) {
 func TestC_Following(t *testing.T) {
 	tests := []struct {
 		name    string
-		path    string
+		iri     vocab.IRI
 		actor   vocab.Item
 		want    vocab.CollectionInterface
 		wantErr error
@@ -895,24 +870,18 @@ func TestC_Following(t *testing.T) {
 		},
 		{
 			name:    "not empty",
-			path:    "/invalid",
-			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid/following not found")), "unable to load"),
+			iri:     "http://example.com/invalid",
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com/invalid/following").annotate(errors.NotFoundf("/invalid/following not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
-			path:  "/",
+			iri:   "http://example.com/",
 			actor: mockActor("http://example.com/", "jdoe"),
 			want:  mockCollection("jdoe", vocab.Following),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := C{
-				c: defaultClient,
-				l: lw.Dev(lw.SetOutput(t.Output())),
-			}
-
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/following" {
 					errors.NotFound.ServeHTTP(w, r)
@@ -924,15 +893,14 @@ func TestC_Following(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			ctx := context.Background()
-			var iri vocab.IRI
-			if tt.path != "" {
-				iri = vocab.IRI(srv.URL).AddPath(tt.path)
+			c := C{
+				c: srv.Client(),
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
-			got, err := c.Following(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri)+"/following")) {
-				t.Errorf("Following() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri)+"/following")))
+			got, err := c.Following(context.Background(), tt.iri)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(srv.URL)) {
+				t.Errorf("Following() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(srv.URL)))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
@@ -945,7 +913,7 @@ func TestC_Following(t *testing.T) {
 func TestC_Liked(t *testing.T) {
 	tests := []struct {
 		name    string
-		path    string
+		iri     vocab.IRI
 		actor   vocab.Item
 		want    vocab.CollectionInterface
 		wantErr error
@@ -956,24 +924,19 @@ func TestC_Liked(t *testing.T) {
 		},
 		{
 			name:    "not empty",
-			path:    "/invalid",
+			iri:     "http://example.com/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid/liked not found")), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com/invalid/liked").annotate(errors.NotFoundf("/invalid/liked not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
-			path:  "/",
+			iri:   "http://example.com/",
 			actor: mockActor("http://example.com/", "jdoe"),
 			want:  mockCollection("jdoe", vocab.Liked),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := C{
-				c: defaultClient,
-				l: lw.Dev(lw.SetOutput(t.Output())),
-			}
-
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/liked" {
 					errors.NotFound.ServeHTTP(w, r)
@@ -985,15 +948,14 @@ func TestC_Liked(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			ctx := context.Background()
-			var iri vocab.IRI
-			if tt.path != "" {
-				iri = vocab.IRI(srv.URL).AddPath(tt.path)
+			c := C{
+				c: srv.Client(),
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
-			got, err := c.Liked(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri)+"/liked")) {
-				t.Errorf("Liked() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri)+"/liked")))
+			got, err := c.Liked(context.Background(), tt.iri)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(srv.URL)) {
+				t.Errorf("Liked() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(srv.URL)))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
@@ -1006,7 +968,7 @@ func TestC_Liked(t *testing.T) {
 func TestC_Likes(t *testing.T) {
 	tests := []struct {
 		name    string
-		path    string
+		iri     vocab.IRI
 		actor   vocab.Item
 		want    vocab.CollectionInterface
 		wantErr error
@@ -1017,24 +979,19 @@ func TestC_Likes(t *testing.T) {
 		},
 		{
 			name:    "not empty",
-			path:    "/invalid",
+			iri:     "http://example.com/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid/likes not found")), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com/invalid/likes").annotate(errors.NotFoundf("/invalid/likes not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
-			path:  "/",
+			iri:   "http://example.com/",
 			actor: mockActor("http://example.com/", "jdoe"),
 			want:  mockCollection("jdoe", vocab.Likes),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := C{
-				c: defaultClient,
-				l: lw.Dev(lw.SetOutput(t.Output())),
-			}
-
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/likes" {
 					errors.NotFound.ServeHTTP(w, r)
@@ -1046,15 +1003,14 @@ func TestC_Likes(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			ctx := context.Background()
-			var iri vocab.IRI
-			if tt.path != "" {
-				iri = vocab.IRI(srv.URL).AddPath(tt.path)
+			c := C{
+				c: srv.Client(),
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
-			got, err := c.Likes(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri)+"/likes")) {
-				t.Errorf("Likes() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri)+"/likes")))
+			got, err := c.Likes(context.Background(), tt.iri)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(srv.URL)) {
+				t.Errorf("Likes() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(srv.URL)))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
@@ -1067,7 +1023,7 @@ func TestC_Likes(t *testing.T) {
 func TestC_Shares(t *testing.T) {
 	tests := []struct {
 		name    string
-		path    string
+		path    vocab.IRI
 		actor   vocab.Item
 		want    vocab.CollectionInterface
 		wantErr error
@@ -1078,24 +1034,19 @@ func TestC_Shares(t *testing.T) {
 		},
 		{
 			name:    "not empty",
-			path:    "/invalid",
+			path:    "http://example.com/invalid",
 			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid/shares not found")), "unable to load"),
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com/invalid/shares").annotate(errors.NotFoundf("/invalid/shares not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
-			path:  "/",
+			path:  "http://example.com/",
 			actor: mockActor("http://example.com/", "jdoe"),
 			want:  mockCollection("jdoe", vocab.Shares),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := C{
-				c: defaultClient,
-				l: lw.Dev(lw.SetOutput(t.Output())),
-			}
-
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/shares" {
 					errors.NotFound.ServeHTTP(w, r)
@@ -1107,15 +1058,14 @@ func TestC_Shares(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			ctx := context.Background()
-			var iri vocab.IRI
-			if tt.path != "" {
-				iri = vocab.IRI(srv.URL).AddPath(tt.path)
+			c := C{
+				c: srv.Client(),
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
-			got, err := c.Shares(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri)+"/shares")) {
-				t.Errorf("Shares() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri)+"/shares")))
+			got, err := c.Shares(context.Background(), tt.path)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(srv.URL)) {
+				t.Errorf("Shares() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(srv.URL)))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
@@ -1128,7 +1078,7 @@ func TestC_Shares(t *testing.T) {
 func TestC_Replies(t *testing.T) {
 	tests := []struct {
 		name    string
-		path    string
+		iri     vocab.IRI
 		actor   vocab.Item
 		want    vocab.CollectionInterface
 		wantErr error
@@ -1139,24 +1089,18 @@ func TestC_Replies(t *testing.T) {
 		},
 		{
 			name:    "not empty",
-			path:    "/invalid",
-			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid/replies not found")), "unable to load"),
+			iri:     "http://example.com/invalid",
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com/invalid/replies").annotate(errors.NotFoundf("/invalid/replies not found")), "unable to load"),
 		},
 		{
 			name:  "ordered collection",
-			path:  "/",
+			iri:   "http://example.com/",
 			actor: mockActor("http://example.com/", "jdoe"),
 			want:  mockCollection("jdoe", vocab.Replies),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := C{
-				c: defaultClient,
-				l: lw.Dev(lw.SetOutput(t.Output())),
-			}
-
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/replies" {
 					errors.NotFound.ServeHTTP(w, r)
@@ -1168,15 +1112,14 @@ func TestC_Replies(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			ctx := context.Background()
-			var iri vocab.IRI
-			if tt.path != "" {
-				iri = vocab.IRI(srv.URL).AddPath(tt.path)
+			c := C{
+				c: srv.Client(),
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
-			got, err := c.Replies(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri)+"/replies")) {
-				t.Errorf("Replies() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri)+"/replies")))
+			got, err := c.Replies(context.Background(), tt.iri)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(srv.URL)) {
+				t.Errorf("Replies() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(srv.URL)))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
@@ -1189,7 +1132,7 @@ func TestC_Replies(t *testing.T) {
 func TestC_Actor(t *testing.T) {
 	tests := []struct {
 		name    string
-		path    string
+		iri     vocab.IRI
 		act     vocab.Actor
 		want    *vocab.Actor
 		wantErr error
@@ -1200,24 +1143,18 @@ func TestC_Actor(t *testing.T) {
 		},
 		{
 			name:    "not empty",
-			path:    "/invalid",
-			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid not found")), "unable to load actor"),
+			iri:     "http://example.com/invalid",
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com/invalid").annotate(errors.NotFoundf("/invalid not found")), "unable to load actor"),
 		},
 		{
 			name: "jdoe",
-			path: "/~jdoe",
+			iri:  "http://example.com/~jdoe",
 			act:  *mockActor("http://example.com/", "jdoe"),
 			want: mockActor("http://example.com/", "jdoe"),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := C{
-				c: defaultClient,
-				l: lw.Dev(lw.SetOutput(t.Output())),
-			}
-
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/~jdoe" {
 					errors.NotFound.ServeHTTP(w, r)
@@ -1232,15 +1169,14 @@ func TestC_Actor(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			ctx := context.Background()
-			var iri vocab.IRI
-			if tt.path != "" {
-				iri = vocab.IRI(srv.URL).AddPath(tt.path)
+			c := C{
+				c: srv.Client(),
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
-			got, err := c.Actor(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri))) {
-				t.Errorf("Actor() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri))))
+			got, err := c.Actor(context.Background(), tt.iri)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(srv.URL)) {
+				t.Errorf("Actor() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(srv.URL)))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
@@ -1253,7 +1189,7 @@ func TestC_Actor(t *testing.T) {
 func TestC_Object(t *testing.T) {
 	tests := []struct {
 		name    string
-		path    string
+		iri     vocab.IRI
 		act     vocab.Object
 		want    *vocab.Object
 		wantErr error
@@ -1264,24 +1200,18 @@ func TestC_Object(t *testing.T) {
 		},
 		{
 			name:    "not empty",
-			path:    "/invalid",
-			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid not found")), "unable to load object"),
+			iri:     "http://example.com/invalid",
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com/invalid").annotate(errors.NotFoundf("/invalid not found")), "unable to load object"),
 		},
 		{
 			name: "jdoe",
-			path: "/~jdoe",
+			iri:  "http://example.com/~jdoe",
 			act:  *mockObject(),
 			want: mockObject(),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := C{
-				c: defaultClient,
-				l: lw.Dev(lw.SetOutput(t.Output())),
-			}
-
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/~jdoe" {
 					errors.NotFound.ServeHTTP(w, r)
@@ -1296,15 +1226,14 @@ func TestC_Object(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			ctx := context.Background()
-			var iri vocab.IRI
-			if tt.path != "" {
-				iri = vocab.IRI(srv.URL).AddPath(tt.path)
+			c := C{
+				c: srv.Client(),
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
-			got, err := c.Object(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri))) {
-				t.Errorf("Object() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri))))
+			got, err := c.Object(context.Background(), tt.iri)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(srv.URL)) {
+				t.Errorf("Object() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(srv.URL)))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {
@@ -1327,7 +1256,7 @@ func mockObject() *vocab.Object {
 func TestC_Activity(t *testing.T) {
 	tests := []struct {
 		name    string
-		path    string
+		iri     vocab.IRI
 		act     vocab.Activity
 		want    *vocab.Activity
 		wantErr error
@@ -1338,24 +1267,18 @@ func TestC_Activity(t *testing.T) {
 		},
 		{
 			name:    "not empty",
-			path:    "/invalid",
-			want:    nil,
-			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com").annotate(errors.NotFoundf("/invalid not found")), "unable to load activity"),
+			iri:     "http://example.com/invalid",
+			wantErr: errors.Annotatef(errf("invalid status received").iri("http://example.com/invalid").annotate(errors.NotFoundf("/invalid not found")), "unable to load activity"),
 		},
 		{
 			name: "jdoe",
-			path: "/~jdoe",
+			iri:  "http://example.com/~jdoe",
 			act:  *mockActivity(),
 			want: mockActivity(),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := C{
-				c: defaultClient,
-				l: lw.Dev(lw.SetOutput(t.Output())),
-			}
-
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/~jdoe" {
 					errors.NotFound.ServeHTTP(w, r)
@@ -1370,15 +1293,14 @@ func TestC_Activity(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			ctx := context.Background()
-			var iri vocab.IRI
-			if tt.path != "" {
-				iri = vocab.IRI(srv.URL).AddPath(tt.path)
+			c := C{
+				c: srv.Client(),
+				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
-			got, err := c.Activity(ctx, iri)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(string(iri))) {
-				t.Errorf("Activity() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(string(iri))))
+			got, err := c.Activity(context.Background(), tt.iri)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(srv.URL)) {
+				t.Errorf("Activity() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(srv.URL)))
 				return
 			}
 			if !cmp.Equal(got, tt.want, EquateItems) {

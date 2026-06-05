@@ -21,6 +21,15 @@ import (
 	"golang.org/x/oauth2"
 )
 
+const (
+	ContentTypeJsonLD = requests.ContentTypeJsonLD
+	// ContentTypeActivityJson This specification registers the application/activity+json MIME Media Type
+	// specifically for identifying documents conforming to the Activity Streams 2.0 format.
+	//
+	// https://www.w3.org/TR/activitystreams-core/#media-type
+	ContentTypeActivityJson = requests.ContentTypeActivityJson
+)
+
 type Ctx = lw.Ctx
 
 type RequestSignFn func(*http.Request) error
@@ -35,7 +44,7 @@ type Basic interface {
 }
 
 // UserAgent value that the client uses when performing requests
-var UserAgent = "go-ap-client (+https://github.com/go-ap)"
+var UserAgent = "GoAP-Client (+https://github.com/go-ap)"
 
 // defaultLogger is a nil logging function that is set as default.
 var defaultLogger = lw.Nil()
@@ -157,7 +166,7 @@ func appendRelevantHeaders(lCtx lw.Ctx, hh http.Header) {
 	}
 }
 
-func (c *C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
+func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 	errCtx := Ctx{"IRI": id}
 	st := time.Now()
 	if len(id) == 0 {
@@ -226,24 +235,24 @@ func (c *C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 }
 
 // CtxLoadIRI tries to dereference an IRI and load the full ActivityPub object it represents
-func (c *C) CtxLoadIRI(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
+func (c C) CtxLoadIRI(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 	return c.loadCtx(ctx, id)
 }
 
 // LoadIRI tries to dereference an IRI and load the full ActivityPub object it represents
-func (c *C) LoadIRI(id vocab.IRI) (vocab.Item, error) {
+func (c C) LoadIRI(id vocab.IRI) (vocab.Item, error) {
 	return c.loadCtx(context.Background(), id)
 }
 
-func (c *C) FetchRequest(ctx context.Context, url string) (*http.Request, error) {
+func (c C) FetchRequest(ctx context.Context, url string) (*http.Request, error) {
 	return FetchRequest(ctx, url, http.MethodGet)
 }
 
-func (c *C) PostRequest(ctx context.Context, url, contentType string, body io.Reader) (*http.Request, error) {
+func (c C) PostRequest(ctx context.Context, url, contentType string, body io.Reader) (*http.Request, error) {
 	return ActivityPubRequest(ctx, url, contentType, body)
 }
 
-func (c *C) Do(req *http.Request) (*http.Response, error) {
+func (c C) Do(req *http.Request) (*http.Response, error) {
 	if c.c == nil {
 		c.c = defaultClient
 	}

@@ -34,6 +34,12 @@ func TestCodeVerifier(t *testing.T) {
 }
 
 func TestOAuth2Client(t *testing.T) {
+	mockConfig := oauth2.Config{}
+	mockToken := oauth2.Token{
+		AccessToken:  "ggg",
+		TokenType:    "Bear",
+		RefreshToken: "rrr",
+	}
 	type args struct {
 		ctx context.Context
 		c   *C2S
@@ -62,11 +68,55 @@ func TestOAuth2Client(t *testing.T) {
 			},
 			want: &http.Client{Timeout: 666 * time.Millisecond},
 		},
+		{
+			name: "from context",
+			args: args{
+				ctx: context.WithValue(context.Background(), oauth2.HTTPClient, &http.Client{Timeout: 666 * time.Millisecond}),
+				c:   nil,
+			},
+			want: &http.Client{Timeout: 666 * time.Millisecond},
+		},
+		{
+			name: "direct oauth2",
+			args: args{
+				ctx: context.Background(),
+				c: &C2S{
+					IRI:  "http://example.com",
+					Conf: mockConfig,
+					Tok:  &mockToken,
+				},
+			},
+			want: &http.Client{
+				Transport: &oauth2.Transport{
+					Source: mockConfig.TokenSource(context.Background(), &mockToken),
+				},
+			},
+		},
+		{
+			name: "with proxy url",
+			args: args{
+				ctx: context.Background(),
+				c: &C2S{
+					IRI:      "http://example.com",
+					Conf:     mockConfig,
+					Tok:      &mockToken,
+					ProxyURL: "http://example.com/proxy",
+				},
+			},
+			want: &http.Client{
+				Transport: &proxy.Transport{
+					Base: &oauth2.Transport{
+						Source: mockConfig.TokenSource(context.Background(), &mockToken),
+					},
+					ProxyURL: "http://example.com/proxy",
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := OAuth2Client(tt.args.ctx, tt.args.c); !cmp.Equal(got, tt.want, cmpopts.IgnoreUnexported(http.Client{})) {
-				t.Errorf("OAuth2Client() = %s", cmp.Diff(tt.want, got, cmpopts.IgnoreUnexported(http.Client{})))
+			if got := OAuth2Client(tt.args.ctx, tt.args.c); !cmp.Equal(got, tt.want, ignoreClient, ignoreTokenSource) {
+				t.Errorf("OAuth2Client() = %s", cmp.Diff(tt.want, got, ignoreClient, ignoreTokenSource))
 			}
 		})
 	}
@@ -99,8 +149,6 @@ func TestC2S_Refresh(t *testing.T) {
 					//ExpiresIn:    10,
 				},
 			},
-			ctx:     nil,
-			wantErr: nil,
 		},
 	}
 	for _, tt := range tests {
@@ -109,7 +157,7 @@ func TestC2S_Refresh(t *testing.T) {
 				Conf: tt.fields.Conf,
 				Tok:  tt.fields.Tok,
 			}
-			if err := c.Refresh(tt.ctx); !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+			if err := c.Refresh(tt.ctx); !cmp.Equal(err, tt.wantErr, EquateWeakErrors("http://example.com")) {
 				t.Errorf("Refresh() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
@@ -122,16 +170,22 @@ func areErrors(a, b any) bool {
 	return ok1 && ok2
 }
 
-func compareErrors(x, y interface{}) bool {
-	xe := x.(error)
-	ye := y.(error)
-	if errors.Is(xe, ye) || errors.Is(ye, xe) {
-		return true
+func compareErrorsWithUrl(url string) func(x, y any) bool {
+	return func(x, y any) bool {
+		xe := x.(error)
+		ye := y.(error)
+		if errors.Is(xe, ye) || errors.Is(ye, xe) {
+			return true
+		}
+		xs := strings.ReplaceAll(xe.Error(), "http://example.com", url)
+		ys := strings.ReplaceAll(ye.Error(), "http://example.com", url)
+		return xs == ys
 	}
-	return xe.Error() == ye.Error()
 }
 
-var EquateWeakErrors = cmp.FilterValues(areErrors, cmp.Comparer(compareErrors))
+var EquateWeakErrors = func(url string) cmp.Option {
+	return cmp.FilterValues(areErrors, cmp.Comparer(compareErrorsWithUrl(url)))
+}
 
 func TestC2S_Config(t *testing.T) {
 	tests := []struct {
@@ -255,9 +309,8 @@ func TestC2S_Sign(t *testing.T) {
 		wantErr error
 	}{
 		{
-			name:    "empty",
-			fields:  fields{},
-			wantErr: nil,
+			name:   "empty",
+			fields: fields{},
 		},
 		{
 			name: "not empty",
@@ -267,15 +320,14 @@ func TestC2S_Sign(t *testing.T) {
 					TokenType:   "Bear",
 				},
 			},
-			r:       &http.Request{Method: "TEST", Header: make(http.Header)},
-			wantErr: nil,
+			r: &http.Request{Method: "TEST", Header: make(http.Header)},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &C2S{Tok: tt.fields.Tok}
-			if err := c.Sign(tt.r); !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("Sign() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if err := c.Sign(tt.r); !cmp.Equal(err, tt.wantErr, EquateWeakErrors("http://example.com")) {
+				t.Errorf("Sign() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors("http://example.com")))
 			}
 			if tt.r != nil && tt.fields.Tok != nil {
 				if c.Tok == nil {
@@ -347,6 +399,12 @@ func Test_dumbProgressBar(t *testing.T) {
 }
 
 func TestC2S_Transport(t *testing.T) {
+	mockConfig := oauth2.Config{}
+	mockToken := oauth2.Token{
+		AccessToken:  "ggg",
+		TokenType:    "bear",
+		RefreshToken: "rrr",
+	}
 	type fields struct {
 		IRI      vocab.IRI
 		Conf     oauth2.Config
@@ -364,6 +422,28 @@ func TestC2S_Transport(t *testing.T) {
 			fields: fields{},
 			want:   &http.Transport{},
 		},
+		{
+			name:   "empty ctx",
+			fields: fields{Tok: &mockToken},
+			ctx:    context.Background(),
+			want:   mockConfig.Client(context.Background(), &mockToken).Transport,
+		},
+		{
+			name: "with proxy url",
+			fields: fields{
+				IRI:      "http://example.com",
+				Conf:     mockConfig,
+				Tok:      &mockToken,
+				ProxyURL: "http://example.com/proxy",
+			},
+			ctx: context.Background(),
+			want: &proxy.Transport{
+				Base: &oauth2.Transport{
+					Source: mockConfig.TokenSource(context.Background(), &mockToken),
+				},
+				ProxyURL: "http://example.com/proxy",
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -373,16 +453,14 @@ func TestC2S_Transport(t *testing.T) {
 				Tok:      tt.fields.Tok,
 				ProxyURL: tt.fields.ProxyURL,
 			}
-			if got := c.Transport(tt.ctx); !cmp.Equal(got, tt.want, cmpopts.IgnoreUnexported(http.Transport{})) {
-				t.Errorf("Transport() = %s", cmp.Diff(tt.want, got, cmpopts.IgnoreUnexported(http.Transport{})))
+			if got := c.Transport(tt.ctx); !cmp.Equal(got, tt.want, ignoredTransports, ignoreTokenSource) {
+				t.Errorf("Transport() = %s", cmp.Diff(tt.want, got, ignoredTransports, ignoreTokenSource))
 			}
 		})
 	}
 }
 
 func Test_normalizeActorURL(t *testing.T) {
-	type args struct {
-	}
 	tests := []struct {
 		name     string
 		actorURL vocab.IRI
@@ -414,8 +492,8 @@ func Test_normalizeActorURL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := normalizeActorIRI(tt.actorURL)
-			if !cmp.Equal(tt.wantErr, err, EquateWeakErrors) {
-				t.Errorf("normalizeActorURL() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if !cmp.Equal(tt.wantErr, err, EquateWeakErrors("http://example.com")) {
+				t.Errorf("normalizeActorURL() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors("http://example.com")))
 				return
 			}
 			if got != tt.want {
@@ -584,8 +662,8 @@ func Test_waitForOAuth2Callback(t *testing.T) {
 			}()
 
 			got, err := waitForOAuth2Callback(ctx, &conf, tt.state, tt.codeVerifier)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("handleOAuth2Flow() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(srv.URL)) {
+				t.Errorf("handleOAuth2Flow() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(srv.URL)))
 				return
 			}
 			if !cmp.Equal(got, tt.want, cmpopts.IgnoreUnexported(oauth2.Token{})) {
@@ -663,8 +741,8 @@ func Test_handleCallback(t *testing.T) {
 				t.Errorf("handleCallback() GET unexpected status: %d, wanted %d", res.StatusCode, tt.wantStatus)
 			}
 			cbRes := <-callbackCh
-			if !cmp.Equal(cbRes.err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("handleCallback() error = %s", cmp.Diff(tt.wantErr, cbRes.err, EquateWeakErrors))
+			if !cmp.Equal(cbRes.err, tt.wantErr, EquateWeakErrors(srv.URL)) {
+				t.Errorf("handleCallback() error = %s", cmp.Diff(tt.wantErr, cbRes.err, EquateWeakErrors(srv.URL)))
 			}
 			if cbRes.tok != tt.wantTok {
 				t.Errorf("handleCallback() tok = %v, want %v", cbRes.tok, tt.wantTok)
@@ -673,154 +751,12 @@ func Test_handleCallback(t *testing.T) {
 	}
 }
 
-func TestOAuth2Client1(t *testing.T) {
-	mockConfig := oauth2.Config{}
-	mockToken := oauth2.Token{
-		AccessToken:  "ggg",
-		TokenType:    "Bear",
-		RefreshToken: "rrr",
-	}
-	type args struct {
-		ctx context.Context
-		c   *C2S
-	}
-	tests := []struct {
-		name string
-		args args
-		want *http.Client
-	}{
-		{
-			name: "empty",
-			args: args{},
-			want: &http.Client{},
-		},
-		{
-			name: "from context",
-			args: args{
-				ctx: context.WithValue(context.Background(), oauth2.HTTPClient, &http.Client{Timeout: 666 * time.Millisecond}),
-				c:   nil,
-			},
-			want: &http.Client{Timeout: 666 * time.Millisecond},
-		},
-		{
-			name: "direct oauth2",
-			args: args{
-				ctx: context.Background(),
-				c: &C2S{
-					IRI:  "http://example.com",
-					Conf: mockConfig,
-					Tok:  &mockToken,
-				},
-			},
-			want: &http.Client{
-				Transport: &oauth2.Transport{
-					Source: mockConfig.TokenSource(context.Background(), &mockToken),
-				},
-			},
-		},
-		{
-			name: "with proxy url",
-			args: args{
-				ctx: context.Background(),
-				c: &C2S{
-					IRI:      "http://example.com",
-					Conf:     mockConfig,
-					Tok:      &mockToken,
-					ProxyURL: "http://example.com/proxy",
-				},
-			},
-			want: &http.Client{
-				Transport: &proxy.Transport{
-					Base: &oauth2.Transport{
-						Source: mockConfig.TokenSource(context.Background(), &mockToken),
-					},
-					ProxyURL: "http://example.com/proxy",
-				},
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := OAuth2Client(tt.args.ctx, tt.args.c); !cmp.Equal(got, tt.want, ignoreTokenSource) {
-				t.Errorf("OAuth2Client() = %s", cmp.Diff(tt.want, got, ignoreTokenSource))
-			}
-		})
-	}
-}
-
-func TestC2S_Transport1(t *testing.T) {
-	mockConfig := oauth2.Config{}
-	mockToken := oauth2.Token{
-		AccessToken:  "ggg",
-		TokenType:    "bear",
-		RefreshToken: "rrr",
-	}
-	type fields struct {
-		IRI      vocab.IRI
-		Conf     oauth2.Config
-		Tok      *oauth2.Token
-		ProxyURL vocab.IRI
-	}
-	type args struct {
-		ctx context.Context
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		args   args
-		want   http.RoundTripper
-	}{
-		{
-			name:   "empty",
-			fields: fields{},
-			args:   args{},
-			want:   &http.Transport{},
-		},
-		{
-			name: "empty",
-			fields: fields{
-				Tok: &mockToken,
-			},
-			args: args{},
-			want: mockConfig.Client(context.Background(), &mockToken).Transport,
-		},
-		{
-			name: "with proxy url",
-			fields: fields{
-				IRI:      "http://example.com",
-				Conf:     mockConfig,
-				Tok:      &mockToken,
-				ProxyURL: "http://example.com/proxy",
-			},
-			args: args{
-				ctx: context.Background(),
-			},
-			want: &proxy.Transport{
-				Base: &oauth2.Transport{
-					Source: mockConfig.TokenSource(context.Background(), &mockToken),
-				},
-				ProxyURL: "http://example.com/proxy",
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := &C2S{
-				IRI:      tt.fields.IRI,
-				Conf:     tt.fields.Conf,
-				Tok:      tt.fields.Tok,
-				ProxyURL: tt.fields.ProxyURL,
-			}
-			if got := c.Transport(tt.args.ctx); !cmp.Equal(got, tt.want, ignoreTokenSource, ignoredTransports) {
-				t.Errorf("Transport() = %s", cmp.Diff(tt.want, got, ignoreTokenSource, ignoredTransports))
-			}
-		})
-	}
-}
-
-var ignoreOAuth2Config = cmpopts.IgnoreUnexported(oauth2.Config{})
-var ignoreTokenSource = cmpopts.IgnoreInterfaces(struct{ oauth2.TokenSource }{})
-var ignoredTransports = cmpopts.IgnoreUnexported(http.Transport{})
+var (
+	ignoreOAuth2Config = cmpopts.IgnoreUnexported(oauth2.Config{})
+	ignoreTokenSource  = cmpopts.IgnoreInterfaces(struct{ oauth2.TokenSource }{})
+	ignoredTransports  = cmpopts.IgnoreUnexported(http.Transport{})
+	ignoreClient       = cmpopts.IgnoreUnexported(http.Client{})
+)
 
 func TestAuthorize(t *testing.T) {
 	mockActor := vocab.Actor{
@@ -847,7 +783,6 @@ func TestAuthorize(t *testing.T) {
 		{
 			name:    "empty",
 			args:    args{},
-			want:    nil,
 			wantErr: errors.Annotatef(errors.Newf("empty IRI"), "invalid actor URL"),
 		},
 		{
@@ -929,18 +864,13 @@ func TestAuthorize(t *testing.T) {
 			srv := httptest.NewServer(tt.handlerFn)
 			defer srv.Close()
 
-			if tt.args.actorURL != "" {
-				u, err := url.Parse(tt.args.actorURL)
-				if err == nil {
-					su, _ := url.Parse(srv.URL)
-					u.Host = su.Host
-					tt.args.actorURL = u.String()
-				}
+			if tt.args.ctx != nil {
+				tt.args.ctx = context.WithValue(tt.args.ctx, oauth2.HTTPClient, srv.Client())
 			}
 
 			got, err := Authorize(tt.args.ctx, tt.args.actorURL, tt.args.auth)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("Authorize() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(srv.URL)) {
+				t.Errorf("Authorize() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(srv.URL)))
 				return
 			}
 			if !cmp.Equal(got, tt.want, ignoreTokenSource, ignoreOAuth2Config) {

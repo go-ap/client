@@ -74,13 +74,18 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 	if err != nil {
 		return nil, errors.Annotatef(err, "invalid actor URL")
 	}
-	if ctx.Value(oauth2.HTTPClient) == nil {
-		transport := client.UserAgentTransport(auth.UserAgent, cache.Private(http.DefaultTransport, cache.Mem(MByte)))
+
+	if ctxCl := ctx.Value(oauth2.HTTPClient); ctxCl != nil {
+		baseClient, ok := ctxCl.(*http.Client)
+		if ok {
+			baseClient.Transport = client.UserAgentTransport(auth.UserAgent, cache.Private(baseClient.Transport, cache.Mem(MByte)))
+		}
+	} else {
 		// Set up the default HTTP client for the oauth2 module
 		// which gets used by both Person and Application authorization flows.
-		plainHTTPClient := http.DefaultClient
-		plainHTTPClient.Transport = transport
-		ctx = context.WithValue(ctx, oauth2.HTTPClient, plainHTTPClient)
+		baseClient := httpDefaultClientCopy
+		baseClient.Transport = client.UserAgentTransport(auth.UserAgent, cache.Private(&httpDefaultTransportCopy, cache.Mem(MByte)))
+		ctx = context.WithValue(ctx, oauth2.HTTPClient, baseClient)
 	}
 
 	app := new(C2S)
@@ -234,36 +239,51 @@ const (
 	MByte = 1024 * KByte
 )
 
-var DefaultClient = &http.Client{}
+var (
+	httpDefaultTransportCopy = *http.DefaultTransport.(*http.Transport)
+	httpDefaultClientCopy    = *http.DefaultClient
+)
 
 func (c *C2S) Transport(ctx context.Context) http.RoundTripper {
 	var transport http.RoundTripper = &http.Transport{}
-	if tok := c.Token(); tok != nil {
-		transport = c.Config().Client(ctx, tok).Transport
+	if ctx != nil {
+		if cl, ok := ctx.Value(oauth2.HTTPClient).(*http.Client); ok {
+			transport = cl.Transport
+		} else {
+			cl = c.Config().Client(ctx, c.Tok)
+			transport = cl.Transport
+		}
 	}
 	if !vocab.EmptyIRI.Equal(c.ProxyURL) {
-		transport = proxy.New(proxy.WithTransport(transport), proxy.WithProxyURL(c.ProxyURL))
+		initFns := []proxy.OptionFn{proxy.WithProxyURL(c.ProxyURL)}
+		if transport != nil {
+			initFns = append(initFns, proxy.WithTransport(transport))
+		}
+		transport = proxy.New(initFns...)
 	}
 	return transport
 }
 
 func OAuth2Client(ctx context.Context, c *C2S) *http.Client {
-	httpC := DefaultClient
+	var httpC *http.Client
+	var httpT http.RoundTripper
 	if ctx != nil {
-		if oauthCl, ok := ctx.Value(oauth2.HTTPClient).(*http.Client); ok {
-			httpC = oauthCl
+		httpC, _ = ctx.Value(oauth2.HTTPClient).(*http.Client)
+
+		// NOTE(marius): I'm not sure in which order we should wrap the OAuth2 and Cached transports
+		// The initial feeling is that they serve different purposes:
+		//  * the cache transport needs to be used on fetches
+		//  * the OAuth2 transport needs to be used on writes
+		if c != nil {
+			httpT = c.Transport(ctx)
 		}
 	}
 	if httpC == nil {
-		httpC = &http.Client{}
+		httpC = &httpDefaultClientCopy
 	}
 
-	// NOTE(marius): I'm not sure in which order we should wrap the OAuth2 and Cached transports
-	// The initial feeling is that they serve different purposes:
-	//  * the cache transport needs to be used on fetches
-	//  * the OAuth2 transport needs to be used on writes
-	if c != nil {
-		httpC.Transport = c.Transport(ctx)
+	if httpT != nil {
+		httpC.Transport = httpT
 	}
 
 	return httpC

@@ -436,7 +436,6 @@ func TestC_toCollection(t *testing.T) {
 	}
 	tests := []struct {
 		name      string
-		client    httpClient
 		handlerFn http.HandlerFunc
 		args      args
 		wantIRI   vocab.IRI
@@ -448,8 +447,7 @@ func TestC_toCollection(t *testing.T) {
 			wantErr: errors.Newf("invalid IRI to POST to"),
 		},
 		{
-			name:   "nil response",
-			client: http.DefaultClient,
+			name: "nil response",
 			args: args{
 				ctx:     context.Background(),
 				act:     mockActivity(),
@@ -463,8 +461,7 @@ func TestC_toCollection(t *testing.T) {
 			wantErr: nil,
 		},
 		{
-			name:   "nil response with Location",
-			client: http.DefaultClient,
+			name: "nil response with Location",
 			args: args{
 				ctx:     context.Background(),
 				act:     mockActivity(),
@@ -479,8 +476,7 @@ func TestC_toCollection(t *testing.T) {
 			wantErr: nil,
 		},
 		{
-			name:   "response with Location",
-			client: http.DefaultClient,
+			name: "response with Location",
 			args: args{
 				ctx:     context.Background(),
 				act:     mockActivity(),
@@ -497,8 +493,7 @@ func TestC_toCollection(t *testing.T) {
 			wantErr: nil,
 		},
 		{
-			name:   "404 response",
-			client: http.DefaultClient,
+			name: "404 response",
 			args: args{
 				ctx:     context.Background(),
 				act:     mockActivity(),
@@ -508,8 +503,7 @@ func TestC_toCollection(t *testing.T) {
 			wantErr:   errors.NotFoundf("test"),
 		},
 		{
-			name:   "401 response",
-			client: http.DefaultClient,
+			name: "401 response",
 			args: args{
 				ctx:     context.Background(),
 				act:     mockActivity(),
@@ -519,8 +513,7 @@ func TestC_toCollection(t *testing.T) {
 			wantErr:   errors.Unauthorizedf("STOP"),
 		},
 		{
-			name:   "500 response",
-			client: http.DefaultClient,
+			name: "500 response",
 			args: args{
 				ctx:     context.Background(),
 				act:     mockActivity(),
@@ -533,7 +526,6 @@ func TestC_toCollection(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := C{
-				c: tt.client,
 				l: lw.Dev(lw.SetOutput(t.Output())),
 			}
 
@@ -563,7 +555,6 @@ func TestC_toCollection(t *testing.T) {
 func TestC_LoadIRI(t *testing.T) {
 	tests := []struct {
 		name      string
-		client    httpClient
 		handlerFn http.HandlerFunc
 		id        vocab.IRI
 		want      vocab.Item
@@ -619,10 +610,6 @@ func TestC_LoadIRI(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := C{
-				c: tt.client,
-				l: lw.Dev(lw.SetOutput(t.Output())),
-			}
 			if tt.handlerFn == nil {
 				tt.handlerFn = func(w http.ResponseWriter, r *http.Request) {
 					w.WriteHeader(http.StatusGatewayTimeout)
@@ -632,15 +619,19 @@ func TestC_LoadIRI(t *testing.T) {
 			srv := httptest.NewServer(tt.handlerFn)
 			defer srv.Close()
 
+			c := C{
+				c: srv.Client(),
+				l: lw.Dev(lw.SetOutput(t.Output())),
+			}
+
 			if tt.id != "" {
 				u, err := url.Parse(string(tt.id))
 				if err == nil {
 					su, _ := url.Parse(srv.URL)
 					u.Host = su.Host
-					tt.id = vocab.IRI(u.String())
 
 					if tt.wantErr.msg != "" || tt.wantErr.err != nil {
-						tt.wantErr.i = tt.id
+						tt.wantErr.i = vocab.IRI(u.String())
 					}
 				}
 			}
