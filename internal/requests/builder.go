@@ -21,7 +21,7 @@ const (
 )
 
 func ActivityPubBuilder(reqUrl, contentType string, body io.Reader) *requests.Builder {
-	rb := requests.URL(reqUrl).Method(http.MethodPost)
+	rb := FetchBuilder(reqUrl, http.MethodPost)
 	if len(contentType) == 0 {
 		contentType = ContentTypeJsonLD
 	}
@@ -29,11 +29,6 @@ func ActivityPubBuilder(reqUrl, contentType string, body io.Reader) *requests.Bu
 	if body != nil {
 		rb.BodyReader(body)
 	}
-	if u, err := rb.URL(); err == nil {
-		rb.Host(u.Hostname())
-		rb.Header("Host", u.Hostname())
-	}
-	rb.Header("Date", TimeNow().Format(http.TimeFormat))
 	return rb
 }
 
@@ -42,11 +37,11 @@ const plainJson = "application/json;q=0.9"
 func FetchBuilder(reqUrl, method string) *requests.Builder {
 	rb := requests.URL(reqUrl).Method(method)
 	acceptedMediaTypes := []string{ContentTypeActivityJson, ContentTypeJsonLD, plainJson}
+	// NOTE(marius): these are required when signing requests with our draft HTTP-Signatures
 	rb.Header("Accept", strings.Join(acceptedMediaTypes, ", "))
-	rb.Header("Date", TimeNow().Format(http.TimeFormat))
 	if u, err := rb.URL(); err == nil {
-		rb.Host(u.Hostname())
-		rb.Header("Host", u.Hostname())
+		rb.Header("Host", u.Host)
 	}
+	rb.Header("Date", TimeNow().Format(http.TimeFormat))
 	return rb
 }

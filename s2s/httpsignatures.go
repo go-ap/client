@@ -300,7 +300,8 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			// NOTE(marius): Not an acceptable response status, so we want to try again.
 			lc["status"] = res.StatusCode
 			l.WithContext(lc).Errorf("error response from remote server")
-			defer res.Body.Close()
+			_, _ = io.Copy(io.Discard, res.Body)
+			res.Body.Close()
 
 			return nil, ErrRetry
 		default:
