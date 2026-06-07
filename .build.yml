@@ -1,6 +1,7 @@
 image: archlinux
 packages:
   - go
+  - golangci-lint
 sources:
   - https://github.com/go-ap/client
 secrets:
@@ -8,6 +9,9 @@ secrets:
 environment:
   GO111MODULE: 'on'
 tasks:
+  - fmt: |
+      cd client
+      test -z $(gofmt -l .)
   - tests: |
       cd client
       make test
@@ -16,3 +20,6 @@ tasks:
       git switch -C master origin/master
       make coverage
       go tool goveralls -flagname unit-tests -service=${CI_NAME} -coverprofile client.coverprofile -repotokenfile ~/.coveralls.tok
+  - lint: |
+      cd client
+      golangci-lint run || true
