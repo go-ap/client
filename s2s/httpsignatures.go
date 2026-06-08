@@ -9,7 +9,6 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -117,12 +116,7 @@ func New(initFns ...OptionFn) *Transport {
 }
 
 func randomNonce() (string, error) {
-	nonceBytes := make([]byte, 32)
-	_, err := rand.Read(nonceBytes)
-	if err != nil {
-		return "", fmt.Errorf("could not generate nonce: %w", err)
-	}
-	return base64.URLEncoding.EncodeToString(nonceBytes), nil
+	return rand.Text(), nil
 }
 
 type noncer func() (string, error)
