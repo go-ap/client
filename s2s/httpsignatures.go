@@ -125,11 +125,7 @@ func (n noncer) GetNonce(_ context.Context) (string, error) {
 	return n()
 }
 
-func validateActorPublicKey(key crypto.PrivateKey, act vocab.Actor) error {
-	actorPubKey, err := toCryptoPublicKey(act.PublicKey)
-	if err != nil {
-		return errors.Annotatef(err, "unable to sign request, Actor public key type %T is invalid", actorPubKey)
-	}
+func validateActorPublicKey(key crypto.PrivateKey, actorPubKey crypto.PublicKey) error {
 	switch pk := key.(type) {
 	case *rsa.PrivateKey:
 		pub := &pk.PublicKey
@@ -150,19 +146,34 @@ func validateActorPublicKey(key crypto.PrivateKey, act vocab.Actor) error {
 	return nil
 }
 
-func rfcAlgorithmFromPrivateKey(key crypto.PrivateKey) rfc.SignatureAlgorithm {
+func rfcAlgorithmFromPrivateKey(key crypto.PrivateKey, typ KeyEncoding) rfc.SignatureAlgorithm {
 	// NOTE(marius): I'm not sure what purpose it serves to validate the public key of the actor
 	// against the private key
-	var alg rfc.SignatureAlgorithm
+	var alg rfc.SignatureAlgorithm = "unknown"
+
 	switch pk := key.(type) {
 	case *rsa.PrivateKey:
 		switch pk.Size() {
 		case 128, 256:
-			alg = rfc.RsaPkcs1v15Sha256
+			switch typ {
+			case KeyTypePKCS:
+				alg = rfc.RsaPkcs1v15Sha256
+			case KeyTypePKIX:
+				alg = rfc.RsaPssSha256
+			}
 		case 384:
-			alg = rfc.RsaPkcs1v15Sha384
+			switch typ {
+			case KeyTypePKCS:
+				alg = rfc.RsaPkcs1v15Sha384
+			case KeyTypePKIX:
+				alg = rfc.RsaPssSha384
+			}
 		case 512:
-			alg = rfc.RsaPkcs1v15Sha512
+			switch typ {
+			case KeyTypePKCS:
+				alg = rfc.RsaPkcs1v15Sha512
+			case KeyTypePKIX:
+			}
 		}
 	case *ecdsa.PrivateKey:
 		if p := pk.Params(); p != nil {
@@ -190,19 +201,22 @@ func (s *Transport) signRequestRFC(coveredComponents []string) func(req *http.Re
 			return errors.Newf("unable to sign request, private key is invalid")
 		}
 
-		if err := validateActorPublicKey(s.Key, *s.Actor); err != nil {
+		pubKey, typ, err := toCryptoPublicKey(s.Actor.PublicKey)
+		if err != nil {
+			return errors.Annotatef(err, "unable to sign request, unable to validate the Actor's public key")
+		}
+		if err = validateActorPublicKey(s.Key, pubKey); err != nil {
 			return errors.Annotatef(err, "unable to sign request, Actor public key does not match it's private key")
 		}
 
 		key := rfc.Key{
 			KeyID:     string(s.Actor.PublicKey.ID),
-			Algorithm: rfcAlgorithmFromPrivateKey(s.Key),
+			Algorithm: rfcAlgorithmFromPrivateKey(s.Key, typ),
 			Key:       s.Key,
 		}
 
 		initFns := []rfc.SignerOption{
 			rfc.WithTTL(sigValidDuration),
-			rfc.WithNonce(s.nonceFn),
 		}
 
 		if s.tag != "" {
@@ -214,6 +228,9 @@ func (s *Transport) signRequestRFC(coveredComponents []string) func(req *http.Re
 		}
 		if req.Method == http.MethodPost {
 			initFns = append(initFns, rfc.WithContentDigestAlgorithm(rfc.Sha256))
+		}
+		if s.nonceFn != nil {
+			initFns = append(initFns, rfc.WithNonce(s.nonceFn))
 		}
 		signer, err := rfc.NewSigner(key, initFns...)
 		if err != nil {
@@ -245,10 +262,12 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	coveredComponents := s.coveredComponents
 	if coveredComponents == nil {
+		// NOTE(marius): ideally the caller knows if we're about to sign a Fetch or not,
+		// and provide all necessary covered components at initialization time.
 		coveredComponents = FetchCoveredComponents
-	}
-	if !isFetchRequest {
-		coveredComponents = append(coveredComponents, PostCoveredComponents...)
+		if !isFetchRequest {
+			coveredComponents = append(coveredComponents, AdditionalPostCoveredComponents...)
+		}
 	}
 	roundTripFn := func(req *http.Request, signFn func(*http.Request) error, l lw.Logger) (*http.Response, error) {
 		lastTry := false
@@ -277,14 +296,18 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		switch res.StatusCode {
+		case http.StatusServiceUnavailable:
+			// NOTE(marius): this is a hack for mastoart.social
+			// which returns a 503 if it encountered previous errors.
+			fallthrough
 		case http.StatusBadRequest:
 			// NOTE(marius): this is a hack for tags.pub that doesn't
 			// return a 403 or 401 error status on failing signatures
 			// See https://todo.sr.ht/~mariusor/go-activitypub/473
 			fallthrough
-		case http.StatusServiceUnavailable:
-			// NOTE(marius): this is a hack for mastoart.social
-			// which returns a 503 if it encountered previous errors.
+		case http.StatusNotFound:
+			// NOTE(marius): many services, among which the GoActivityPub ones, return not found
+			// for resources that are actually forbidden.
 			fallthrough
 		case http.StatusUnauthorized, http.StatusForbidden:
 			// NOTE(marius): Not an acceptable response status, so we want to try again.
@@ -363,16 +386,24 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return nil, errors.Unauthorizedf("unauthorized")
 }
 
-func toCryptoPublicKey(key vocab.PublicKey) (crypto.PublicKey, error) {
-	block, _ := pem.Decode([]byte(key.PublicKeyPem))
-	if block == nil {
-		return nil, errors.Errorf("invalid PEM decode on public key")
+type KeyEncoding int
+
+var (
+	KeyTypePKIX KeyEncoding = 1
+	KeyTypePKCS KeyEncoding = 2
+)
+
+func toCryptoPublicKey(key vocab.PublicKey) (crypto.PublicKey, KeyEncoding, error) {
+	pubBytes, _ := pem.Decode([]byte(key.PublicKeyPem))
+	if pubBytes == nil {
+		return nil, -1, errors.Newf("unable to decode PEM payload for public key")
 	}
-	pk, err := x509.ParsePKIXPublicKey(block.Bytes)
-	if err == nil {
-		return pk, err
+	pk, _ := x509.ParsePKIXPublicKey(pubBytes.Bytes)
+	if pk != nil {
+		return pk, KeyTypePKIX, nil
 	}
-	return x509.ParsePKCS1PublicKey(block.Bytes)
+	pk, err := x509.ParsePKCS1PublicKey(pubBytes.Bytes)
+	return pk, KeyTypePKCS, err
 }
 
 func keyMismatchErr(pk crypto.PrivateKey, pub crypto.PublicKey) error {

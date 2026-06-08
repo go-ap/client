@@ -15,8 +15,8 @@ var (
 	// FetchCoveredComponents is the list of components to be used for generating the
 	// RFC9421 Signature Base for GET and HEAD requests.
 	// https://www.rfc-editor.org/rfc/rfc9421.html#name-derived-components
-	FetchCoveredComponents = []string{"@method", "@target-uri"}
-	// PostCoveredComponents is the list of components to be used for generating the
+	FetchCoveredComponents = []string{"@method", "@target-uri", "date"}
+	// AdditionalPostCoveredComponents is the list of components to be used for generating the
 	// RFC9421 Signature Base for POST, PUT, DELETE requests.
-	PostCoveredComponents = []string{"content-type", "content-digest"}
+	AdditionalPostCoveredComponents = []string{"content-type"}
 )

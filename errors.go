@@ -41,9 +41,9 @@ func (e cerr) Error() string {
 	s := strings.Builder{}
 	s.WriteString(e.msg)
 	if e.i != "" {
-		s.WriteString(" (loading: \"")
+		s.WriteString(" (loading: '")
 		s.WriteString(string(e.i))
-		s.WriteString("\")")
+		s.WriteString("')")
 	}
 	if e.err != nil {
 		if msg := e.err.Error(); len(msg) > 0 {
