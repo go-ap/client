@@ -42,6 +42,7 @@ type Transport struct {
 	// See: https://www.rfc-editor.org/rfc/rfc9421.html#section-2.3-4.12
 	tag string
 
+	Alg   KeyEncoding
 	Key   crypto.PrivateKey
 	Actor *vocab.Actor
 
@@ -72,6 +73,13 @@ func WithNonce(nonceFn func() (string, error)) OptionFn {
 func WithCoveredComponents(comp ...string) OptionFn {
 	return func(h *Transport) error {
 		h.coveredComponents = comp
+		return nil
+	}
+}
+
+func WithAlg(alg KeyEncoding) OptionFn {
+	return func(h *Transport) error {
+		h.Alg = alg
 		return nil
 	}
 }
@@ -158,21 +166,21 @@ func rfcAlgorithmFromPrivateKey(key crypto.PrivateKey, typ KeyEncoding) rfc.Sign
 			switch typ {
 			case KeyTypePKCS:
 				alg = rfc.RsaPkcs1v15Sha256
-			case KeyTypePKIX:
+			case KeyTypePSS:
 				alg = rfc.RsaPssSha256
 			}
 		case 384:
 			switch typ {
 			case KeyTypePKCS:
 				alg = rfc.RsaPkcs1v15Sha384
-			case KeyTypePKIX:
+			case KeyTypePSS:
 				alg = rfc.RsaPssSha384
 			}
 		case 512:
 			switch typ {
 			case KeyTypePKCS:
 				alg = rfc.RsaPkcs1v15Sha512
-			case KeyTypePKIX:
+			case KeyTypePSS:
 			}
 		}
 	case *ecdsa.PrivateKey:
@@ -201,7 +209,7 @@ func (s *Transport) signRequestRFC(coveredComponents []string) func(req *http.Re
 			return errors.Newf("unable to sign request, private key is invalid")
 		}
 
-		pubKey, typ, err := toCryptoPublicKey(s.Actor.PublicKey)
+		pubKey, err := toCryptoPublicKey(s.Actor.PublicKey)
 		if err != nil {
 			return errors.Annotatef(err, "unable to sign request, unable to validate the Actor's public key")
 		}
@@ -211,7 +219,7 @@ func (s *Transport) signRequestRFC(coveredComponents []string) func(req *http.Re
 
 		key := rfc.Key{
 			KeyID:     string(s.Actor.PublicKey.ID),
-			Algorithm: rfcAlgorithmFromPrivateKey(s.Key, typ),
+			Algorithm: rfcAlgorithmFromPrivateKey(s.Key, s.Alg),
 			Key:       s.Key,
 		}
 
@@ -389,21 +397,21 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 type KeyEncoding int
 
 var (
-	KeyTypePKIX KeyEncoding = 1
-	KeyTypePKCS KeyEncoding = 2
+	KeyTypePKCS KeyEncoding = 0
+	KeyTypePSS  KeyEncoding = 1
 )
 
-func toCryptoPublicKey(key vocab.PublicKey) (crypto.PublicKey, KeyEncoding, error) {
+func toCryptoPublicKey(key vocab.PublicKey) (crypto.PublicKey, error) {
 	pubBytes, _ := pem.Decode([]byte(key.PublicKeyPem))
 	if pubBytes == nil {
-		return nil, -1, errors.Newf("unable to decode PEM payload for public key")
+		return nil, errors.Newf("unable to decode PEM payload for public key")
 	}
 	pk, _ := x509.ParsePKIXPublicKey(pubBytes.Bytes)
 	if pk != nil {
-		return pk, KeyTypePKIX, nil
+		return pk, nil
 	}
 	pk, err := x509.ParsePKCS1PublicKey(pubBytes.Bytes)
-	return pk, KeyTypePKCS, err
+	return pk, err
 }
 
 func keyMismatchErr(pk crypto.PrivateKey, pub crypto.PublicKey) error {
