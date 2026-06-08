@@ -66,7 +66,9 @@ func (d Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return d.Base.RoundTrip(req)
 	}
-	defer ff.Close()
+	defer func() {
+		_ = ff.Close()
+	}()
 
 	raw, _ := httputil.DumpRequestOut(req, req.Body != nil)
 	if raw != nil {

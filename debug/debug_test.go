@@ -173,10 +173,8 @@ func TestWithTransport(t *testing.T) {
 
 func areHttpTransports(t1, t2 any) bool {
 	_, o1 := t1.(*http.Transport)
-	_, o11 := t1.(http.Transport)
 	_, o2 := t2.(*http.Transport)
-	_, o21 := t2.(http.Transport)
-	return o1 && o2 || o11 && o21
+	return o1 && o2
 }
 
 func compareHttpTransports(t1, t2 *http.Transport) bool {
@@ -276,11 +274,6 @@ func TestNew(t *testing.T) {
 			}
 		})
 	}
-}
-
-func mockRequest(met, url string, body io.Reader) *http.Request {
-	r, _ := http.NewRequest(met, url, body)
-	return r
 }
 
 func areErrors(a, b any) bool {

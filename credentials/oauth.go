@@ -84,7 +84,7 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 		// Set up the default HTTP client for the oauth2 module
 		// which gets used by both Person and Application authorization flows.
 		baseClient := httpDefaultClientCopy
-		baseClient.Transport = client.UserAgentTransport(auth.UserAgent, cache.Private(&httpDefaultTransportCopy, cache.Mem(MByte)))
+		baseClient.Transport = client.UserAgentTransport(auth.UserAgent, cache.Private(httpDefaultTransportCopy, cache.Mem(MByte)))
 		ctx = context.WithValue(ctx, oauth2.HTTPClient, baseClient)
 	}
 
@@ -143,7 +143,7 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 	// NOTE(marius): if we support an interactive session, we try to authenticate through the browser.
 	if app.Tok == nil && auth.Interactive {
 		// NOTE(marius): For all Person actors, or a failed password credentials flow, we try  an authorization flow.
-		state := rand.Text()
+		state := rand.Text()[:16]
 
 		codeVerifier := CodeVerifier()
 		authURL := app.Config().AuthCodeURL(state, oauth2.S256ChallengeOption(codeVerifier))
@@ -158,6 +158,9 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 			return nil, err
 		}
 		app.Tok, err = app.Conf.TokenSource(ctx, tok).Token()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return app, err
@@ -225,10 +228,10 @@ func getActorOAuthEndpoint(actor vocab.Actor) oauth2.Endpoint {
 	}
 	if actor.Endpoints != nil {
 		if !vocab.IsNil(actor.Endpoints.OauthAuthorizationEndpoint) {
-			e.AuthURL = actor.Endpoints.OauthAuthorizationEndpoint.GetLink().String()
+			e.AuthURL = string(actor.Endpoints.OauthAuthorizationEndpoint.GetLink())
 		}
 		if !vocab.IsNil(actor.Endpoints.OauthTokenEndpoint) {
-			e.TokenURL = actor.Endpoints.OauthTokenEndpoint.GetLink().String()
+			e.TokenURL = string(actor.Endpoints.OauthTokenEndpoint.GetLink())
 		}
 	}
 	return e
@@ -240,8 +243,22 @@ const (
 )
 
 var (
-	httpDefaultTransportCopy = *http.DefaultTransport.(*http.Transport)
-	httpDefaultClientCopy    = *http.DefaultClient
+	httpDefaultTransportCopy = func() *http.Transport {
+		cTransp := http.DefaultTransport.(*http.Transport)
+		tr := http.Transport{}
+		tr.Proxy = cTransp.Proxy
+		tr.DialContext = cTransp.DialContext
+		tr.ForceAttemptHTTP2 = cTransp.ForceAttemptHTTP2
+		tr.MaxIdleConns = cTransp.MaxIdleConns
+		tr.IdleConnTimeout = cTransp.IdleConnTimeout
+		tr.TLSHandshakeTimeout = cTransp.TLSHandshakeTimeout
+		tr.ExpectContinueTimeout = cTransp.ExpectContinueTimeout
+		return &tr
+	}()
+	httpDefaultClientCopy = func() *http.Client {
+		cl := *http.DefaultClient
+		return &cl
+	}()
 )
 
 func (c *C2S) Transport(ctx context.Context) http.RoundTripper {
@@ -279,7 +296,7 @@ func OAuth2Client(ctx context.Context, c *C2S) *http.Client {
 		}
 	}
 	if httpC == nil {
-		httpC = &httpDefaultClientCopy
+		httpC = httpDefaultClientCopy
 	}
 
 	if httpT != nil {
@@ -315,6 +332,10 @@ func dumbProgressBar(ctx context.Context) {
 	ticker := time.NewTicker(time.Second)
 	wd := authWaitDuration + time.Second
 	wait := time.NewTimer(wd)
+	defer func() {
+		// NOTE(marius): clean countdown line
+		fmt.Printf("\r\n")
+	}()
 	for {
 		select {
 		case <-ctx.Done():
@@ -322,7 +343,7 @@ func dumbProgressBar(ctx context.Context) {
 		case <-wait.C:
 			return
 		case cur := <-ticker.C:
-			fmt.Printf("\rWaiting for %s\r", (wd - cur.Truncate(time.Second).Sub(start)).Truncate(time.Second).String())
+			fmt.Printf("\rWaiting for: %5s\r", (wd - cur.Truncate(time.Second).Sub(start)).Truncate(time.Second).String())
 		}
 	}
 }
@@ -352,13 +373,6 @@ func handleCallback(callbackCh chan callbackResponse, state string) http.Handler
 			return
 		}
 		_ = r.ParseForm()
-		if token := r.Form.Get("code"); token != "" {
-			callbackCh <- callbackResponse{tok: token}
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(successCallbackHTML))
-			return
-		}
-
 		var cbErr error
 		if r.Form.Get("error") != "" {
 			var desc string
@@ -369,11 +383,18 @@ func handleCallback(callbackCh chan callbackResponse, state string) http.Handler
 		} else if r.Form.Get("state") != state {
 			cbErr = fmt.Errorf("state parameter mismatch")
 		} else {
+			if token := r.Form.Get("code"); token != "" {
+				callbackCh <- callbackResponse{tok: token}
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(successCallbackHTML))
+				return
+			}
+
 			cbErr = fmt.Errorf("token is missing")
 		}
 		callbackCh <- callbackResponse{err: cbErr}
 		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(fmt.Sprintf(errorCallbackHTML, cbErr)))
+		_, _ = fmt.Fprintf(w, errorCallbackHTML, cbErr)
 	}
 }
 
@@ -386,7 +407,9 @@ func waitForOAuth2Callback(ctx context.Context, app *oauth2.Config, state, codeV
 	if err != nil {
 		return nil, err
 	}
-	defer l.Close()
+	defer func() {
+		_ = l.Close()
+	}()
 
 	callbackCh := make(chan callbackResponse)
 
@@ -395,9 +418,13 @@ func waitForOAuth2Callback(ctx context.Context, app *oauth2.Config, state, codeV
 
 	srv := &http.Server{Handler: handleCallback(callbackCh, state)}
 
-	go srv.Serve(l)
 	go dumbProgressBar(ctx)
-	defer srv.Close()
+	go func() {
+		_ = srv.Serve(l)
+	}()
+	defer func() {
+		_ = srv.Close()
+	}()
 
 	select {
 	case <-ctx.Done():

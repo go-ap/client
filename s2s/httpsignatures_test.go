@@ -124,8 +124,6 @@ func TestWithLogger(t *testing.T) {
 				if tr.l != ll {
 					t.Errorf("WithLogger() should not be nil")
 				}
-			} else if _, ok := tr.l.(lw.Logger); !ok {
-				t.Errorf("WithLogger() %T should be compatible with %T", tr.l, lw.Logger(nil))
 			}
 		})
 	}
@@ -514,7 +512,7 @@ DwcMY+iaEAgUTM1wAZ097BDYA7slyqP7
 	blockPrvEd25519, _ = pem.Decode([]byte(prvPemED25519))
 	prvEd25519, _      = x509.ParsePKCS8PrivateKey(blockPrvEd25519.Bytes)
 	blockPubEd25519, _ = pem.Decode([]byte(pubPemED25519))
-	pubED25519, _      = x509.ParsePKIXPublicKey(blockPubEd25519.Bytes)
+	_, _               = x509.ParsePKIXPublicKey(blockPubEd25519.Bytes)
 
 	actorED25519 = &vocab.Actor{
 		ID: "https://example.com/~johndoe",

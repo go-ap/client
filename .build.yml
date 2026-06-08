@@ -15,11 +15,11 @@ tasks:
   - tests: |
       cd client
       make test
+  - lint: |
+      cd client
+      golangci-lint run
   - coverage: |
       cd client
       git switch -C master origin/master
       make coverage
       go tool goveralls -flagname unit-tests -service=${CI_NAME} -coverprofile client.coverprofile -repotokenfile ~/.coveralls.tok
-  - lint: |
-      cd client
-      golangci-lint run || true

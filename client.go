@@ -175,24 +175,25 @@ func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 	if _, err := id.URL(); err != nil {
 		return nil, errf("trying to load an invalid IRI").iri(id).annotate(err)
 	}
-	var err error
+
 	var obj vocab.Item
 
-	var resp *http.Response
-	if resp, err = c.CtxGet(ctx, id.String()); err != nil {
-		c.l.WithContext(errCtx, Ctx{"err": fmt.Sprintf("%+v", err)}).Errorf("failed to load IRI")
+	resp, err := c.CtxGet(ctx, id.String())
+	if err != nil {
+		c.l.WithContext(errCtx, Ctx{"err": err.Error()}).Errorf("failed to load IRI")
 		return obj, err
 	}
 
-	// NOTE(marius): here we might want to group the Close with a Flush of the
-	// Body using io.Copy(ioutil.Discard, resp.Body)
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	errCtx["duration"] = time.Since(st)
 	errCtx["status"] = resp.StatusCode
 	appendRelevantHeaders(errCtx, resp.Header)
-	var body []byte
-	if body, err = io.ReadAll(resp.Body); err != nil {
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
 		c.l.WithContext(errCtx, Ctx{"err": err}).Errorf("unable to read response body")
 		return obj, err
 	}
@@ -259,8 +260,6 @@ func (c C) Do(req *http.Request) (*http.Response, error) {
 	return c.c.Do(req)
 }
 
-const contentTypeAny = "*/*"
-
 // CtxGet wrapper over the functionality offered by the default http.Client object
 func (c C) CtxGet(ctx context.Context, url string) (*http.Response, error) {
 	req, err := FetchRequest(ctx, url, http.MethodGet)
@@ -307,21 +306,23 @@ func (c C) toCollection(ctx context.Context, act vocab.Item, colIRI vocab.IRI) (
 	if len(colIRI) == 0 {
 		return "", nil, errf("invalid IRI to POST to")
 	}
-	body, err := jsonld.WithContext(jsonld.IRI(vocab.ActivityBaseURI), jsonld.IRI(vocab.SecurityContextURI)).Marshal(act)
+
+	cont, err := jsonld.WithContext(jsonld.IRI(vocab.ActivityBaseURI), jsonld.IRI(vocab.SecurityContextURI)).Marshal(act)
 	if err != nil {
 		return "", nil, errf("unable to marshal activity").iri(colIRI)
 	}
-	var resp *http.Response
-	var resultIRI vocab.IRI
-	req, err := ActivityPubRequest(ctx, string(colIRI), requests.ContentTypeActivityJson, bytes.NewReader(body))
+
+	req, err := ActivityPubRequest(ctx, string(colIRI), requests.ContentTypeActivityJson, bytes.NewReader(cont))
 	if err != nil {
-		return resultIRI, nil, err
+		return "", nil, err
 	}
-	resp, err = c.Do(req)
+
+	resp, err := c.Do(req)
 	if err != nil {
-		return resultIRI, nil, err
+		return "", nil, err
 	}
-	resultIRI = vocab.IRI(resp.Header.Get("Location"))
+
+	resultIRI := vocab.IRI(resp.Header.Get("Location"))
 
 	if resp.StatusCode >= http.StatusBadRequest && resp.StatusCode != http.StatusGone {
 		if err = errors.FromResponse(resp); err == nil {
@@ -331,18 +332,20 @@ func (c C) toCollection(ctx context.Context, act vocab.Item, colIRI vocab.IRI) (
 		}
 		return resultIRI, nil, err
 	}
-	// NOTE(marius): here we might want to group the Close with a Flush of the
-	// Body using io.Copy(ioutil.Discard, resp.Body)
-	defer resp.Body.Close()
-	resBody, err := io.ReadAll(resp.Body)
+
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		c.l.WithContext(Ctx{"iri": colIRI, "status": resp.Status, "err": err}).Errorf("failed to read response body")
 		return resultIRI, nil, err
 	}
-	if len(resBody) == 0 {
+	if len(body) == 0 {
 		return resultIRI, nil, nil
 	}
-	it, err := vocab.UnmarshalJSON(resBody)
+	it, err := vocab.UnmarshalJSON(body)
 	if err != nil {
 		return resultIRI, nil, err
 	}

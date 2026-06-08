@@ -116,10 +116,6 @@ func New(initFns ...OptionFn) *Transport {
 	return h /*, nil*/
 }
 
-type privateKey interface {
-	Public() crypto.PublicKey
-}
-
 func randomNonce() (string, error) {
 	nonceBytes := make([]byte, 32)
 	_, err := rand.Read(nonceBytes)
@@ -166,7 +162,7 @@ func rfcAlgorithmFromPrivateKey(key crypto.PrivateKey) rfc.SignatureAlgorithm {
 	var alg rfc.SignatureAlgorithm
 	switch pk := key.(type) {
 	case *rsa.PrivateKey:
-		switch pk.PublicKey.Size() {
+		switch pk.Size() {
 		case 128, 256:
 			alg = rfc.RsaPkcs1v15Sha256
 		case 384:
@@ -301,7 +297,7 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			lc["status"] = res.StatusCode
 			l.WithContext(lc).Errorf("error response from remote server")
 			_, _ = io.Copy(io.Discard, res.Body)
-			res.Body.Close()
+			_ = res.Body.Close()
 
 			return nil, ErrRetry
 		default:
@@ -416,7 +412,7 @@ func (s *Transport) signRequestDraft(req *http.Request) error {
 	algos := make([]draft.Algorithm, 0)
 	switch pk := s.Key.(type) {
 	case *rsa.PrivateKey:
-		switch pk.PublicKey.Size() {
+		switch pk.Size() {
 		case 128, 256:
 			algos = append(algos, draft.RSA_SHA256)
 		case 384:

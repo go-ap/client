@@ -27,7 +27,7 @@ func TestCodeVerifier(t *testing.T) {
 		t.Errorf("CodeVerifier() returned string of length %d, expected %d", len(got), 43)
 	}
 	for i, ch := range got {
-		if strings.Index(pkceAlphabet, string(ch)) < 0 {
+		if !strings.Contains(pkceAlphabet, string(ch)) {
 			t.Errorf("CodeVerifier() invalid character at pos %d, %s", i, string(ch))
 		}
 	}
@@ -351,7 +351,7 @@ func Test_dumbProgressBar(t *testing.T) {
 	}{
 		{
 			name: "1s run time",
-			want: "\rWaiting for 1s\r",
+			want: "Waiting for:    1s",
 		},
 		{
 			name:     "10ms run time",
@@ -390,8 +390,7 @@ func Test_dumbProgressBar(t *testing.T) {
 			}
 			dumbProgressBar(ctx)
 
-			output := buf.String()
-			if output != tt.want {
+			if output := strings.Trim(buf.String(), "\n\r"); output != tt.want {
 				t.Errorf("dumbProgressBar(): output %s", cmp.Diff(tt.want, output))
 			}
 		})
@@ -589,7 +588,8 @@ func Test_waitForOAuth2Callback(t *testing.T) {
 			}
 			if tt.handlerFn == nil {
 				tt.handlerFn = func(w http.ResponseWriter, r *http.Request) {
-					if r.URL.Path == "/tok" {
+					switch r.URL.Path {
+					case "/tok":
 						_ = r.ParseForm()
 						vals := r.Form
 						// code=g00d&code_verifier=test-verif&grant_type=authorization_code&redirect_uri=http://127.0.0.1:1434
@@ -613,7 +613,7 @@ func Test_waitForOAuth2Callback(t *testing.T) {
 						}
 						w.WriteHeader(http.StatusOK)
 						_, _ = w.Write([]byte(result.Encode()))
-					} else if r.URL.Path == "/auth" {
+					case "/auth":
 						vals := r.URL.Query()
 						if clientID := vals.Get("client_id"); clientID != conf.ClientID {
 							t.Errorf("OAuth2 authorization URL client_id %s, expected %s", clientID, conf.ClientID)
