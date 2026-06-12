@@ -179,7 +179,7 @@ func ExampleTransport_RoundTrip_rfc9421() {
 	}))
 	defer srv.Close()
 
-	tr := New(WithTransport(http.DefaultTransport), WithActor(&exActorRSA, prvKeyRSA), WithNonce(sameNonce))
+	tr := New(WithTransport(http.DefaultTransport), WithActor(&exActorRSA, prvKeyRSA), WithAlg(KeyTypePKCS), WithNonce(sameNonce))
 	req := httptest.NewRequest(http.MethodPost, srv.URL, strings.NewReader(`{"hello": "world"}`))
 	req.Header.Set("Host", "example.com")
 	req.Header.Set("Date", millenium.Format(http.TimeFormat))

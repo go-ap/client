@@ -157,7 +157,7 @@ func validateActorPublicKey(key crypto.PrivateKey, actorPubKey crypto.PublicKey)
 func rfcAlgorithmFromPrivateKey(key crypto.PrivateKey, typ KeyEncoding) rfc.SignatureAlgorithm {
 	// NOTE(marius): I'm not sure what purpose it serves to validate the public key of the actor
 	// against the private key
-	var alg rfc.SignatureAlgorithm = "unknown"
+	var alg rfc.SignatureAlgorithm = ""
 
 	switch pk := key.(type) {
 	case *rsa.PrivateKey:
@@ -396,9 +396,10 @@ func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 type KeyEncoding int
 
-var (
-	KeyTypePKCS KeyEncoding = 0
-	KeyTypePSS  KeyEncoding = 1
+const (
+	KeyTypeUnknown KeyEncoding = 0
+	KeyTypePKCS    KeyEncoding = 1
+	KeyTypePSS     KeyEncoding = 2
 )
 
 func toCryptoPublicKey(key vocab.PublicKey) (crypto.PublicKey, error) {
