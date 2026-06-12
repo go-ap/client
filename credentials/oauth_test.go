@@ -573,7 +573,7 @@ func Test_waitForOAuth2Callback(t *testing.T) {
 	}
 
 	// NOTE(marius): to avoid calling xdg-open in openbrowser()
-	_ = os.Setenv(testingEnvVariable, "1")
+	t.Setenv(testingEnvVariable, "1")
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

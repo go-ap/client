@@ -304,7 +304,7 @@ func Test_buildProxyRequest(t *testing.T) {
 func proxyReq(req *http.Request, proxy string) *http.Request {
 	f := url.Values{}
 	f.Add("id", req.URL.String())
-	body := bytes.NewBuffer([]byte(f.Encode()))
+	body := bytes.NewBufferString(f.Encode())
 	r := httptest.NewRequest(http.MethodPost, proxy, body)
 	r.Header = req.Header.Clone()
 	r.Header.Add("Content-Type", "application/x-www-form-urlencoded")

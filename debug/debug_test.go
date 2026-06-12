@@ -20,6 +20,7 @@ import (
 const StatusFailedTest = http.StatusExpectationFailed
 
 func sameBodyHandler(t *testing.T, bodyBuff, respBuff []byte) http.HandlerFunc {
+	t.Helper()
 	return func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
