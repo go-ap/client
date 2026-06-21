@@ -108,11 +108,11 @@ func WithApplicationTag(t string) OptionFn {
 }
 
 // New initializes the Transport
-// TODO(marius): we need to add to the return values the errors
 // that might come from the initialization functions.
-func New(initFns ...OptionFn) *Transport {
+func New(initFns ...OptionFn) *Transport /*, error*/ {
+	// TODO(marius): we need to add the errors to the return values
 	h := new(Transport)
-	h.nonceFn = randomNonce
+	//h.nonceFn = randomNonce
 	h.l = nilLogger
 	for _, fn := range initFns {
 		if err := fn(h); err != nil {
@@ -244,7 +244,13 @@ func (s *Transport) signRequestRFC(coveredComponents []string) func(req *http.Re
 		if err != nil {
 			return err
 		}
-		postSignHeaders, err := signer.Sign(rfc.MessageFromRequest(req))
+		msg := rfc.MessageFromRequest(req)
+		// NOTE(marius): for some fetch requests, we have a non empty fragment
+		// I'm not clear if this case is handled correctly on the verifier side.
+		//if msg.URL.Fragment != "" {
+		//	req.URL.Fragment = ""
+		//}
+		postSignHeaders, err := signer.Sign(msg)
 		if err != nil {
 			return err
 		}
