@@ -110,10 +110,12 @@ func SkipTLSValidation(skip bool) OptionFn {
 // OptionFn
 type OptionFn func(s *C) error
 
+const MB = 1024 * 1024 * 1024
+
 var (
 	defaultClient = &http.Client{
 		Timeout:   10 * time.Second,
-		Transport: cachedTransport(defaultTransport),
+		Transport: cache.Shared(defaultTransport, cache.Mem(MB)),
 	}
 
 	// This is the TCP connect timeout in this instance.
@@ -132,12 +134,6 @@ var (
 		ua: UserAgent,
 	}
 )
-
-const MB = 1024 * 1024 * 1024
-
-func cachedTransport(t http.RoundTripper) http.RoundTripper {
-	return cache.Shared(t, cache.Mem(MB))
-}
 
 func New(o ...OptionFn) *C {
 	c := &C{c: defaultClient, l: defaultLogger}
