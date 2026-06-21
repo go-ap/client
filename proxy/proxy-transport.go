@@ -18,7 +18,7 @@ type Transport struct {
 	ProxyURL vocab.IRI
 }
 
-var shouldProxyStatuses = []int{http.StatusForbidden, http.StatusUnauthorized}
+var shouldProxyStatuses = []int{http.StatusForbidden, http.StatusUnauthorized, http.StatusNotFound}
 
 // RoundTrip only accepts HTTP GET requests to a remote server.
 // If a 403 (or 401, for Mastodon servers with secure fetch) error is returned by the Base round-tripper,
