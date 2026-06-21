@@ -327,8 +327,10 @@ func openbrowser(url string) error {
 	return err
 }
 
+var TimeNow = func() time.Time { return time.Now().Truncate(time.Millisecond).UTC() }
+
 func dumbProgressBar(ctx context.Context) {
-	start := time.Now().Truncate(time.Second)
+	start := TimeNow()
 	ticker := time.NewTicker(time.Second)
 	wd := authWaitDuration + time.Second
 	wait := time.NewTimer(wd)

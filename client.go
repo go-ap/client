@@ -166,9 +166,11 @@ func appendRelevantHeaders(lCtx lw.Ctx, hh http.Header) {
 	}
 }
 
+var TimeNow = func() time.Time { return time.Now().Truncate(time.Millisecond).UTC() }
+
 func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 	errCtx := Ctx{"IRI": id}
-	st := time.Now()
+	st := TimeNow()
 	if len(id) == 0 {
 		return nil, errf("invalid nil IRI")
 	}

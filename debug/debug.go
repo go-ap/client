@@ -55,13 +55,15 @@ type Transport struct {
 
 const boundary = "\n====================\n"
 
+var TimeNow = func() time.Time { return time.Now().Truncate(time.Millisecond).UTC() }
+
 func (d Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// NOTE(marius): return early if this is not a request with a body
 	if req == nil {
 		return d.Base.RoundTrip(req)
 	}
 
-	fullPath := filepath.Join(d.where, req.URL.Host+strings.ReplaceAll(req.URL.Path, "/", "-")+"-"+time.Now().UTC().Format(time.RFC3339)+".req")
+	fullPath := filepath.Join(d.where, req.URL.Host+strings.ReplaceAll(req.URL.Path, "/", "-")+"-"+TimeNow().Format(time.RFC3339)+".req")
 	ff, err := os.OpenFile(fullPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return d.Base.RoundTrip(req)

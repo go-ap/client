@@ -9,7 +9,7 @@ import (
 	"github.com/carlmjohnson/requests"
 )
 
-var TimeNow = time.Now().Truncate(time.Millisecond).UTC
+var TimeNow = func() time.Time { return time.Now().Truncate(time.Millisecond).UTC() }
 
 const (
 	ContentTypeJsonLD = `application/ld+json; profile="https://www.w3.org/ns/activitystreams"`
