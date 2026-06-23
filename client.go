@@ -146,22 +146,6 @@ func New(o ...OptionFn) *C {
 	return c
 }
 
-var logRelevantHeaders = map[string]string{
-	"sig-input": "Signature-Input",
-	"sig":       "Signature",
-	"auth":      "Authorization",
-	"etag":      "ETag",
-	"ua":        "User-Agent",
-}
-
-func appendRelevantHeaders(lCtx lw.Ctx, hh http.Header) {
-	for k, h := range logRelevantHeaders {
-		if val := hh.Get(h); val != "" {
-			lCtx[k] = val
-		}
-	}
-}
-
 var TimeNow = func() time.Time { return time.Now().Truncate(time.Millisecond).UTC() }
 
 func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
@@ -188,7 +172,21 @@ func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 
 	errCtx["duration"] = time.Since(st)
 	errCtx["status"] = resp.StatusCode
-	appendRelevantHeaders(errCtx, resp.Header)
+	if val := resp.Header.Get("Signature-Input"); val != "" {
+		errCtx["sig-input"] = val
+	}
+	if val := resp.Header.Get("Signature"); val != "" {
+		errCtx["sig"] = val
+	}
+	if val := resp.Header.Get("Authorization"); val != "" {
+		errCtx["auth"] = val
+	}
+	if val := resp.Header.Get("ETag"); val != "" {
+		errCtx["etag"] = val
+	}
+	if val := resp.Header.Get("User-Agent"); val != "" {
+		errCtx["ua"] = val
+	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
