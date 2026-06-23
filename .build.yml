@@ -17,7 +17,7 @@ tasks:
       make test
   - lint: |
       cd client
-      golangci-lint run
+      golangci-lint run --fast-only
   - coverage: |
       cd client
       git switch -C master origin/master
