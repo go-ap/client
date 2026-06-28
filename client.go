@@ -222,10 +222,10 @@ func (c C) loadCtx(ctx context.Context, id vocab.IRI) (vocab.Item, error) {
 	if resp.StatusCode == http.StatusGone {
 		e, err := errors.UnmarshalJSON(body)
 		if err != nil || len(e) == 0 {
-			return it, errors.Gonef("gone")
+			return it, errf("").iri(id).annotate(errors.Gonef("gone"))
 		}
 
-		return it, errors.NewGone(e[0], "unable to load IRI: '%s'", id)
+		return it, errf("unable to load IRI").iri(id).annotate(errors.NewGone(errors.Join(e...), ""))
 	}
 
 	return nil, errf("invalid response from ActivityPub server").annotate(errors.NotImplementedf("not a document and not an error")).iri(id)

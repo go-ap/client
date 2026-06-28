@@ -796,7 +796,7 @@ func TestAuthorize(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 			},
 			wantErr: errors.Annotatef(
-				errors.Annotatef(errors.NotImplementedf("not a document and not an error"), "invalid response from ActivityPub server"),
+				errors.Annotatef(errors.NotImplementedf("not a document and not an error"), "invalid response from ActivityPub server (loading: 'http://example.com/~jdoe')"),
 				"unable to load actor",
 			),
 		},

@@ -500,7 +500,7 @@ func TestC_toCollection(t *testing.T) {
 				colPath: vocab.Outbox,
 			},
 			handlerFn: errors.HandleError(errors.NotFoundf("test")).ServeHTTP,
-			wantErr:   errors.NotFoundf("test"),
+			wantErr:   errors.Annotatef(errors.NotFoundf("test"), "invalid status received: 404"),
 		},
 		{
 			name: "401 response",
@@ -510,7 +510,7 @@ func TestC_toCollection(t *testing.T) {
 				colPath: vocab.Outbox,
 			},
 			handlerFn: errors.HandleError(errors.Unauthorizedf("STOP")).ServeHTTP,
-			wantErr:   errors.Unauthorizedf("STOP"),
+			wantErr:   errors.Annotatef(errors.Unauthorizedf("STOP"), "invalid status received: 401"),
 		},
 		{
 			name: "500 response",
@@ -520,7 +520,7 @@ func TestC_toCollection(t *testing.T) {
 				colPath: vocab.Outbox,
 			},
 			handlerFn: errors.HandleError(errors.Errorf("¡OOPS!")).ServeHTTP,
-			wantErr:   errors.Errorf("invalid status received: 500: test: ¡OOPS!"),
+			wantErr:   errors.Errorf("invalid status received: 500: ¡OOPS!"),
 		},
 	}
 	for _, tt := range tests {
@@ -605,7 +605,7 @@ func TestC_LoadIRI(t *testing.T) {
 				w.WriteHeader(http.StatusGone)
 			},
 			id:      "http://example.com",
-			wantErr: errf("").annotate(errors.Gonef("gone")),
+			wantErr: errf("").annotate(errors.Gonef("gone")).iri("http://example.com"),
 		},
 	}
 	for _, tt := range tests {
