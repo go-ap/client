@@ -164,23 +164,30 @@ func rfcAlgorithmFromPrivateKey(key crypto.PrivateKey, typ KeyEncoding) rfc.Sign
 		switch pk.Size() {
 		case 128, 256:
 			switch typ {
-			case KeyTypePKCS:
-				alg = rfc.RsaPkcs1v15Sha256
 			case KeyTypePSS:
 				alg = rfc.RsaPssSha256
+			case KeyTypePKCS:
+				fallthrough
+			default:
+				alg = rfc.RsaPkcs1v15Sha256
 			}
 		case 384:
 			switch typ {
-			case KeyTypePKCS:
-				alg = rfc.RsaPkcs1v15Sha384
 			case KeyTypePSS:
 				alg = rfc.RsaPssSha384
+			case KeyTypePKCS:
+				fallthrough
+			default:
+				alg = rfc.RsaPkcs1v15Sha384
 			}
 		case 512:
 			switch typ {
-			case KeyTypePKCS:
-				alg = rfc.RsaPkcs1v15Sha512
 			case KeyTypePSS:
+				alg = rfc.RsaPssSha512
+			case KeyTypePKCS:
+				fallthrough
+			default:
+				alg = rfc.RsaPkcs1v15Sha512
 			}
 		}
 	case *ecdsa.PrivateKey:
