@@ -128,7 +128,7 @@ var (
 			IdleConnTimeout:     90 * time.Second,
 			MaxIdleConnsPerHost: 20,
 			DialContext:         (&net.Dialer{Timeout: longTimeout}).DialContext,
-			TLSClientConfig:     &tls.Config{InsecureSkipVerify: false},
+			TLSClientConfig:     &tls.Config{InsecureSkipVerify: DefaultInsecureSkipVerify},
 			TLSHandshakeTimeout: longTimeout,
 		},
 		ua: UserAgent,
