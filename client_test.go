@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -67,18 +68,16 @@ func Test_getTransportWithTLSValidation(t *testing.T) {
 			name: "cache, skip true",
 			args: args{rt: &cache.Transport{Base: defaultTransport}, skip: true},
 			// NOTE(marius): this is defaultTransport with InsecureSkipVerify set to true
-			want: &cache.Transport{Base: uaTransport{
-				Base: &http.Transport{
-					Proxy:               http.ProxyFromEnvironment,
-					MaxIdleConns:        100,
-					IdleConnTimeout:     90 * time.Second,
-					MaxIdleConnsPerHost: 20,
-					DialContext:         (&net.Dialer{Timeout: longTimeout}).DialContext,
-					TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
-					TLSHandshakeTimeout: longTimeout,
-				},
-				ua: UserAgent,
-			}},
+			want: &cache.Transport{Base: &http.Transport{
+				Proxy:               http.ProxyFromEnvironment,
+				MaxIdleConns:        100,
+				IdleConnTimeout:     90 * time.Second,
+				MaxIdleConnsPerHost: 20,
+				DialContext:         (&net.Dialer{Timeout: longTimeout}).DialContext,
+				TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
+				TLSHandshakeTimeout: longTimeout,
+			},
+			},
 		},
 		{
 			name: "empty oauth2, skip false",
@@ -89,7 +88,7 @@ func Test_getTransportWithTLSValidation(t *testing.T) {
 			name: "empty oauth2, skip true",
 			args: args{rt: &oauth2.Transport{}, skip: true},
 			// NOTE(marius): this is defaultTransport with InsecureSkipVerify set to true
-			want: &oauth2.Transport{Base: uaTransport{
+			want: &oauth2.Transport{
 				Base: &http.Transport{
 					Proxy:               http.ProxyFromEnvironment,
 					MaxIdleConns:        100,
@@ -99,8 +98,7 @@ func Test_getTransportWithTLSValidation(t *testing.T) {
 					TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
 					TLSHandshakeTimeout: longTimeout,
 				},
-				ua: UserAgent,
-			}},
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -113,7 +111,7 @@ func Test_getTransportWithTLSValidation(t *testing.T) {
 	}
 }
 
-var ignoredTransports = cmpopts.IgnoreUnexported(http.Transport{}, tls.Config{}, uaTransport{}, cache.Transport{}, s2s.Signer{})
+var ignoredTransports = cmpopts.IgnoreUnexported(http.Transport{}, tls.Config{}, cache.Transport{}, s2s.Signer{})
 
 func TestSkipTLSValidation(t *testing.T) {
 	tests := []struct {
@@ -158,16 +156,6 @@ func TestSkipTLSValidation(t *testing.T) {
 		{
 			name: "true cache.Transport",
 			tr:   &cache.Transport{},
-			skip: true,
-		},
-		{
-			name: "false uaTransport",
-			tr:   &uaTransport{},
-			skip: false,
-		},
-		{
-			name: "true uaTransport",
-			tr:   &uaTransport{},
 			skip: true,
 		},
 	}
@@ -339,6 +327,34 @@ func TestWithAuthorizationFn(t *testing.T) {
 			}
 			if !cmp.Equal(cl.authFns, tt.want, equateFuncs) {
 				t.Errorf("WithAuthorizationFn() = %s", cmp.Diff(tt.want, cl.authFns, equateFuncs))
+			}
+		})
+	}
+}
+
+func TestWithUserAgent(t *testing.T) {
+	tests := []struct {
+		name    string
+		ua      string
+		want    string
+		wantErr error
+	}{
+		{
+			name: "empty",
+			ua:   "",
+			want: UserAgent,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cl := new(C)
+			optionFn := WithUserAgent(tt.ua)
+			err := optionFn(cl)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors("")) {
+				t.Errorf("WithUserAgent() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors("")))
+			}
+			if !cmp.Equal(cl.ua, tt.ua) {
+				t.Errorf("WithUserAgent() = %s", cmp.Diff(tt.ua, cl.ua))
 			}
 		})
 	}

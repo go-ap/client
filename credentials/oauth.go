@@ -78,19 +78,19 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 	if ctxCl := ctx.Value(oauth2.HTTPClient); ctxCl != nil {
 		baseClient, ok := ctxCl.(*http.Client)
 		if ok {
-			baseClient.Transport = client.UserAgentTransport(auth.UserAgent, cache.Private(baseClient.Transport, cache.Mem(MByte)))
+			baseClient.Transport = cache.Private(baseClient.Transport, cache.Mem(MByte))
 		}
 	} else {
 		// Set up the default HTTP client for the oauth2 module
 		// which gets used by both Person and Application authorization flows.
 		baseClient := httpDefaultClientCopy
-		baseClient.Transport = client.UserAgentTransport(auth.UserAgent, cache.Private(httpDefaultTransportCopy, cache.Mem(MByte)))
+		baseClient.Transport = cache.Private(httpDefaultTransportCopy, cache.Mem(MByte))
 		ctx = context.WithValue(ctx, oauth2.HTTPClient, baseClient)
 	}
 
 	app := new(C2S)
 	httpC := OAuth2Client(ctx, app)
-	get := client.New(client.WithHTTPClient(httpC), client.SkipTLSValidation(InsecureTLSConnection))
+	get := client.New(client.WithHTTPClient(httpC), client.SkipTLSValidation(InsecureTLSConnection), client.WithUserAgent(auth.UserAgent))
 
 	actor, err := get.Actor(ctx, actorIRI)
 	if err != nil {

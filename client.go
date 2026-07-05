@@ -45,8 +45,7 @@ type Basic interface {
 // UserAgent value that the client uses when performing requests
 var UserAgent = "GoAP-Client (+https://github.com/go-ap)"
 
-// defaultLogger is a nil logging function that is set as default.
-var defaultLogger = lw.Nil()
+var nilLogger = lw.Nil()
 
 type httpClient interface {
 	Do(*http.Request) (*http.Response, error)
@@ -56,6 +55,7 @@ type C struct {
 	c httpClient
 	l lw.Logger
 
+	ua      string
 	authFns []func(*http.Request) error
 }
 
@@ -100,8 +100,6 @@ func getTransportWithTLSValidation(rt http.RoundTripper, skip bool) http.RoundTr
 		tr.Base = getTransportWithTLSValidation(tr.Base, skip)
 	case *cache.Transport:
 		tr.Base = getTransportWithTLSValidation(tr.Base, skip)
-	case uaTransport:
-		tr.Base = getTransportWithTLSValidation(tr.Base, skip)
 	}
 	return rt
 }
@@ -112,6 +110,14 @@ func SkipTLSValidation(skip bool) OptionFn {
 		if cl, ok := c.c.(*http.Client); ok {
 			getTransportWithTLSValidation(cl.Transport, skip)
 		}
+		return nil
+	}
+}
+
+// WithUserAgent explicitly sets the UserAgent set by the client
+func WithUserAgent(ua string) OptionFn {
+	return func(c *C) error {
+		c.ua = ua
 		return nil
 	}
 }
@@ -130,26 +136,23 @@ var (
 	// This is the TCP connect timeout in this instance.
 	longTimeout = 2500 * time.Millisecond
 
-	defaultTransport http.RoundTripper = uaTransport{
-		Base: &http.Transport{
-			Proxy:               http.ProxyFromEnvironment,
-			MaxIdleConns:        100,
-			IdleConnTimeout:     90 * time.Second,
-			MaxIdleConnsPerHost: 20,
-			DialContext:         (&net.Dialer{Timeout: longTimeout}).DialContext,
-			TLSClientConfig:     &tls.Config{InsecureSkipVerify: DefaultInsecureSkipVerify},
-			TLSHandshakeTimeout: longTimeout,
-		},
-		ua: UserAgent,
+	defaultTransport http.RoundTripper = &http.Transport{
+		Proxy:               http.ProxyFromEnvironment,
+		MaxIdleConns:        100,
+		IdleConnTimeout:     90 * time.Second,
+		MaxIdleConnsPerHost: 20,
+		DialContext:         (&net.Dialer{Timeout: longTimeout}).DialContext,
+		TLSClientConfig:     &tls.Config{InsecureSkipVerify: DefaultInsecureSkipVerify},
+		TLSHandshakeTimeout: longTimeout,
 	}
 )
 
 func New(o ...OptionFn) *C {
-	c := &C{c: defaultClient, l: defaultLogger}
+	c := &C{c: defaultClient, ua: UserAgent, l: nilLogger}
 	for _, fn := range o {
 		err := fn(c)
 		if err != nil {
-			defaultLogger.WithContext(lw.Ctx{"opt": fmt.Sprintf("%T", fn), "err": err}).Errorf("failed option call")
+			nilLogger.WithContext(lw.Ctx{"opt": fmt.Sprintf("%T", fn), "err": err}).Errorf("failed option call")
 		}
 	}
 	return c
@@ -263,6 +266,10 @@ var ErrRetry = errors.Newf("retry")
 func (c C) Do(req *http.Request) (*http.Response, error) {
 	if c.c == nil {
 		c.c = defaultClient
+	}
+
+	if ua := req.Header.Get("User-Agent"); len(ua) == 0 && len(c.ua) > 0 {
+		req.Header.Set("User-Agent", c.ua)
 	}
 
 	try := 0
