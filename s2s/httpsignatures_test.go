@@ -335,3 +335,81 @@ func TestWithCoveredComponents(t *testing.T) {
 		})
 	}
 }
+
+func TestSigner_SignRFC9421(t *testing.T) {
+	type fields struct {
+		nonceFn           noncer
+		coveredComponents []string
+		tag               string
+		Alg               KeyEncoding
+		Key               crypto.PrivateKey
+		Actor             *vocab.Actor
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		req     *http.Request
+		wantErr error
+	}{
+		{
+			name:    "empty",
+			fields:  fields{},
+			req:     new(http.Request),
+			wantErr: errors.Newf("unable to sign request, Actor is invalid"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &Signer{
+				nonceFn:           tt.fields.nonceFn,
+				coveredComponents: tt.fields.coveredComponents,
+				tag:               tt.fields.tag,
+				Alg:               tt.fields.Alg,
+				Key:               tt.fields.Key,
+				Actor:             tt.fields.Actor,
+			}
+			if err := s.SignRFC9421(tt.req); !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("SignRFC9421() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			}
+		})
+	}
+}
+
+func TestSigner_SignDraft(t *testing.T) {
+	type fields struct {
+		nonceFn           noncer
+		coveredComponents []string
+		tag               string
+		Alg               KeyEncoding
+		Key               crypto.PrivateKey
+		Actor             *vocab.Actor
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		req     *http.Request
+		wantErr error
+	}{
+		{
+			name:    "empty",
+			req:     new(http.Request),
+			fields:  fields{},
+			wantErr: errors.Newf("unable to sign request, Actor is invalid"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &Signer{
+				nonceFn:           tt.fields.nonceFn,
+				coveredComponents: tt.fields.coveredComponents,
+				tag:               tt.fields.tag,
+				Alg:               tt.fields.Alg,
+				Key:               tt.fields.Key,
+				Actor:             tt.fields.Actor,
+			}
+			if err := s.SignDraft(tt.req); !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
+				t.Errorf("SignDraft() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			}
+		})
+	}
+}

@@ -16,6 +16,8 @@ func ActivityPubRequest(ctx context.Context, reqUrl, contentType string, body io
 		return nil, err
 	}
 	req.Proto = "HTTP/2.0"
+	req.ProtoMajor = 2
+	req.ProtoMinor = 0
 	return req, nil
 }
 
@@ -28,5 +30,7 @@ func FetchRequest(ctx context.Context, reqUrl, method string) (*http.Request, er
 		return nil, err
 	}
 	req.Proto = "HTTP/2.0"
+	req.ProtoMajor = 2
+	req.ProtoMinor = 0
 	return req, nil
 }

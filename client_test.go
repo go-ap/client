@@ -344,6 +344,11 @@ func TestWithUserAgent(t *testing.T) {
 			ua:   "",
 			want: UserAgent,
 		},
+		{
+			name: "random UA",
+			ua:   "//RANDOM UA//",
+			want: "//RANDOM UA//",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
