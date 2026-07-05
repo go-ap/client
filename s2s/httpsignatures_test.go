@@ -12,8 +12,10 @@ import (
 	"strconv"
 	"testing"
 
+	draft "github.com/dadrus/httpsig"
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/errors"
+	"github.com/go-fed/httpsig"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
@@ -409,6 +411,52 @@ func TestSigner_SignDraft(t *testing.T) {
 			}
 			if err := s.SignDraft(tt.req); !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
 				t.Errorf("SignDraft() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
+			}
+		})
+	}
+}
+
+func Test_draftAlgorithmFromPrivateKey(t *testing.T) {
+	tests := []struct {
+		name string
+		prv  crypto.PrivateKey
+		want httpsig.Algorithm
+	}{
+		{
+			name: "empty",
+			prv:  nil,
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := draftAlgorithmFromPrivateKey(tt.prv); got != tt.want {
+				t.Errorf("draftAlgorithmFromPrivateKey() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_rfcAlgorithmFromPrivateKey(t *testing.T) {
+	type args struct {
+		key crypto.PrivateKey
+		typ KeyEncoding
+	}
+	tests := []struct {
+		name string
+		args args
+		want draft.SignatureAlgorithm
+	}{
+		{
+			name: "empty",
+			args: args{},
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := rfcAlgorithmFromPrivateKey(tt.args.key, tt.args.typ); got != tt.want {
+				t.Errorf("rfcAlgorithmFromPrivateKey() = %v, want %v", got, tt.want)
 			}
 		})
 	}

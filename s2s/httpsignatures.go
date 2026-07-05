@@ -255,6 +255,34 @@ func keyMismatchErr(pk crypto.PrivateKey, pub crypto.PublicKey) error {
 	return errors.Newf("unable to sign request, mismatch between the Actor's public and private key: %T : %T", pub, pk)
 }
 
+func draftAlgorithmFromPrivateKey(prv crypto.PrivateKey) draft.Algorithm {
+	switch pk := prv.(type) {
+	case *rsa.PrivateKey:
+		switch pk.Size() {
+		case 128, 256:
+			return draft.RSA_SHA256
+		case 384:
+			return draft.RSA_SHA384
+		case 512:
+			return draft.RSA_SHA512
+		}
+	case *ecdsa.PrivateKey:
+		if p := pk.Params(); p != nil {
+			switch p.BitSize {
+			case 128, 256:
+				return draft.ECDSA_SHA256
+			case 384:
+				return draft.ECDSA_SHA384
+			case 512:
+				return draft.ECDSA_SHA512
+			}
+		}
+	case ed25519.PrivateKey:
+		return draft.ED25519
+	}
+	return ""
+}
+
 func (s *Signer) signRequestDraft(req *http.Request) error {
 	if s.Actor == nil {
 		return errors.Newf("unable to sign request, Actor is invalid")
@@ -279,35 +307,10 @@ func (s *Signer) signRequestDraft(req *http.Request) error {
 		}
 	}
 
-	algos := make([]draft.Algorithm, 0)
-	switch pk := s.Key.(type) {
-	case *rsa.PrivateKey:
-		switch pk.Size() {
-		case 128, 256:
-			algos = append(algos, draft.RSA_SHA256)
-		case 384:
-			algos = append(algos, draft.RSA_SHA384)
-		case 512:
-			algos = append(algos, draft.RSA_SHA512)
-		}
-	case *ecdsa.PrivateKey:
-		if p := pk.Params(); p != nil {
-			switch p.BitSize {
-			case 128, 256:
-				algos = append(algos, draft.ECDSA_SHA256)
-			case 384:
-				algos = append(algos, draft.ECDSA_SHA384)
-			case 512:
-				algos = append(algos, draft.ECDSA_SHA512)
-			}
-		}
-	case ed25519.PrivateKey:
-		algos = append(algos, draft.ED25519)
-	}
-
+	algo := draftAlgorithmFromPrivateKey(s.Key)
 	secToExpiration := int64(sigValidDuration.Seconds())
 	// NOTE(marius): The only http-signatures accepted by Mastodon instances is "Signature", not "Authorization"
-	sig, _, err := draft.NewSigner(algos, digestAlgorithm, headers, draft.Signature, secToExpiration)
+	sig, _, err := draft.NewSigner([]draft.Algorithm{algo}, digestAlgorithm, headers, draft.Signature, secToExpiration)
 	if err != nil {
 		return err
 	}
