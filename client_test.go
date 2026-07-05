@@ -102,28 +102,6 @@ func Test_getTransportWithTLSValidation(t *testing.T) {
 				ua: UserAgent,
 			}},
 		},
-		{
-			name: "empty s2s, skip false",
-			args: args{rt: &s2s.Transport{}, skip: false},
-			want: &s2s.Transport{Base: defaultTransport},
-		},
-		{
-			name: "empty s2s, skip true",
-			args: args{rt: &s2s.Transport{}, skip: true},
-			// NOTE(marius): this is defaultTransport with InsecureSkipVerify set to true
-			want: &s2s.Transport{Base: uaTransport{
-				Base: &http.Transport{
-					Proxy:               http.ProxyFromEnvironment,
-					MaxIdleConns:        100,
-					IdleConnTimeout:     90 * time.Second,
-					MaxIdleConnsPerHost: 20,
-					DialContext:         (&net.Dialer{Timeout: longTimeout}).DialContext,
-					TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
-					TLSHandshakeTimeout: longTimeout,
-				},
-				ua: UserAgent,
-			}},
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -135,7 +113,7 @@ func Test_getTransportWithTLSValidation(t *testing.T) {
 	}
 }
 
-var ignoredTransports = cmpopts.IgnoreUnexported(http.Transport{}, tls.Config{}, uaTransport{}, cache.Transport{}, s2s.Transport{})
+var ignoredTransports = cmpopts.IgnoreUnexported(http.Transport{}, tls.Config{}, uaTransport{}, cache.Transport{}, s2s.Signer{})
 
 func TestSkipTLSValidation(t *testing.T) {
 	tests := []struct {
@@ -170,16 +148,6 @@ func TestSkipTLSValidation(t *testing.T) {
 		{
 			name: "true debug.Transport",
 			tr:   &debug.Transport{},
-			skip: true,
-		},
-		{
-			name: "false s2s.Transport",
-			tr:   &s2s.Transport{},
-			skip: false,
-		},
-		{
-			name: "true s2s.Transport",
-			tr:   &s2s.Transport{},
 			skip: true,
 		},
 		{
@@ -320,6 +288,57 @@ func TestWithHTTPClient(t *testing.T) {
 			}
 			if !cmp.Equal(cl.c, tt.h, ignoredTransports, equateFuncs) {
 				t.Errorf("WithHTTPClient() = %s", cmp.Diff(tt.h, cl.c, ignoredTransports, equateFuncs))
+			}
+		})
+	}
+}
+
+var emptyAuthFn = func(r *http.Request) error {
+	return nil
+}
+
+func TestWithAuthorizationFn(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []func(*http.Request) error
+		want    []func(*http.Request) error
+		wantErr error
+	}{
+		{
+			name:    "empty",
+			wantErr: fmt.Errorf("nil sign function"),
+		},
+		{
+			name: "empty fn",
+			args: []func(*http.Request) error{emptyAuthFn},
+			want: []func(*http.Request) error{emptyAuthFn},
+		},
+		{
+			name: "RFC9421 Sign Fn",
+			args: []func(*http.Request) error{new(s2s.Signer).SignRFC9421},
+			want: []func(*http.Request) error{new(s2s.Signer).SignRFC9421},
+		},
+		{
+			name: "Draft Sign Fn",
+			args: []func(*http.Request) error{new(s2s.Signer).SignDraft},
+			want: []func(*http.Request) error{new(s2s.Signer).SignDraft},
+		},
+		{
+			name: "RFC9421+Draft Sign Fns",
+			args: []func(*http.Request) error{new(s2s.Signer).SignRFC9421, new(s2s.Signer).SignDraft},
+			want: []func(*http.Request) error{new(s2s.Signer).SignRFC9421, new(s2s.Signer).SignDraft},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cl := new(C)
+			optionFn := WithAuthorizationFn(tt.args...)
+			err := optionFn(cl)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors("")) {
+				t.Errorf("WithAuthorizationFn() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors("")))
+			}
+			if !cmp.Equal(cl.authFns, tt.want, equateFuncs) {
+				t.Errorf("WithAuthorizationFn() = %s", cmp.Diff(tt.want, cl.authFns, equateFuncs))
 			}
 		})
 	}

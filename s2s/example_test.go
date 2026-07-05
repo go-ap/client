@@ -14,6 +14,7 @@ import (
 	"github.com/dadrus/httpsig"
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/errors"
+	draft "github.com/go-fed/httpsig"
 )
 
 var (
@@ -116,32 +117,40 @@ G6aFKaqQfOXKCyWoUiVknQJAXrlgySFci/2ueKlIE1QqIiLSZ8V8OlpFLRnb1pzI
 	}()
 )
 
-func ExampleTransport_RoundTrip_draft() {
+func ExampleSigner_SignDraft() {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("%s\n", r.Header.Get("Signature"))
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 
-	tr := New(WithTransport(http.DefaultTransport), WithActor(jdoeActor, prv), NoRFC9421)
-
-	// The below functionality would be equivalent to the following usage:
-	//http.DefaultClient.Transport = tr
-	//res, err := http.Get(srv.URL)
+	tr, err := New(WithActor(jdoeActor, prv))
+	if err != nil {
+		fmt.Printf("error: %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, srv.URL, nil)
 	host := strings.TrimPrefix(srv.URL, "http://")
 	host = host[:strings.Index(host, ":")]
 	req.Header.Set("Host", host)
 	req.Header.Set("Date", millenium.Format(http.TimeFormat))
-	_, _ = tr.RoundTrip(req)
+	_ = tr.SignDraft(req)
+
+	v, err := draft.NewVerifier(req)
+	if err != nil {
+		panic(err)
+	}
+	err = v.Verify(pub, draft.RSA_SHA256)
+	fmt.Printf("Verify error: %v", err)
 
 	// Output:
-	// keyId="https://example.com/~johndoe#main",algorithm="hs2019",headers="(request-target) host",signature="RhsET77hrToaCyh/2++dFw0PGn64AoZBR3X2r+rVFWDT1CtobC1sVwXcc91v2c2HmB3A6P3EH1truRnhbNpL2sOgmqUbkRGBoO5afsgaRzRg/z8BwKDlnP9w/6zYlvoYH2VcgQpCTKPUkYDGUexFQDxBJMFime+d361I3ptO/Jc="
+	// Verify error: <nil>
 }
 
-func sameNonce() (string, error) {
-	return "test", nil
+func sameNonce(s string) func() (string, error) {
+	return func() (string, error) {
+		return s, nil
+	}
 }
 
 type mockKeyResolver struct{}
@@ -159,7 +168,7 @@ func (n mockNonceChecker) CheckNonce(_ context.Context, _ httpsig.NonceValue) er
 	return errors.Newf("seen nonce before")
 }
 
-func ExampleTransport_RoundTrip_rfc9421() {
+func ExampleSigner_SignRFC9421() {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		verifier, _ := httpsig.NewVerifier(
 			mockKeyResolver{},
@@ -179,15 +188,39 @@ func ExampleTransport_RoundTrip_rfc9421() {
 	}))
 	defer srv.Close()
 
-	tr := New(WithTransport(http.DefaultTransport), WithActor(&exActorRSA, prvKeyRSA), WithAlg(KeyTypePKCS), WithNonce(sameNonce))
+	tr, err := New(WithActor(&exActorRSA, prvKeyRSA), WithAlg(KeyTypePKCS), WithNonce(sameNonce("test")))
+	if err != nil {
+		panic(err)
+	}
 	req := httptest.NewRequest(http.MethodPost, srv.URL, strings.NewReader(`{"hello": "world"}`))
 	req.Header.Set("Host", "example.com")
 	req.Header.Set("Date", millenium.Format(http.TimeFormat))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Content-Length", "18")
 
-	_, _ = tr.RoundTrip(req)
+	_ = tr.SignRFC9421(req)
+	v, err := httpsig.NewVerifier(key(*pubKeyRSA),
+		httpsig.WithValidateAllSignatures(),
+		httpsig.WithCreatedTimestampRequired(false),
+		httpsig.WithExpiredTimestampRequired(false),
+	)
+	if err != nil {
+		panic(err)
+	}
+	err = v.Verify(httpsig.MessageFromRequest(req))
+	fmt.Printf("Verification error: %v", err)
 
 	// Output:
-	// Verification succeeded
+	// Verification error: <nil>
+}
+
+type key rsa.PublicKey
+
+func (k key) ResolveKey(_ context.Context, keyID string) (httpsig.Key, error) {
+	pk := rsa.PublicKey(k)
+	return httpsig.Key{
+		KeyID:     keyID,
+		Algorithm: httpsig.RsaPkcs1v15Sha256,
+		Key:       &pk,
+	}, nil
 }

@@ -15,7 +15,6 @@ import (
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/client/debug"
 	"github.com/go-ap/client/internal/requests"
-	"github.com/go-ap/client/s2s"
 	"github.com/go-ap/errors"
 	"github.com/go-ap/jsonld"
 	"golang.org/x/oauth2"
@@ -56,12 +55,24 @@ type httpClient interface {
 type C struct {
 	c httpClient
 	l lw.Logger
+
+	authFns []func(*http.Request) error
 }
 
 // WithHTTPClient sets the http client
 func WithHTTPClient(h *http.Client) OptionFn {
 	return func(c *C) error {
 		c.c = h
+		return nil
+	}
+}
+
+func WithAuthorizationFn(fns ...func(*http.Request) error) OptionFn {
+	return func(c *C) error {
+		if fns == nil {
+			return errors.Newf("nil sign function")
+		}
+		c.authFns = append(c.authFns, fns...)
 		return nil
 	}
 }
@@ -84,8 +95,6 @@ func getTransportWithTLSValidation(rt http.RoundTripper, skip bool) http.RoundTr
 		}
 		tr.TLSClientConfig.InsecureSkipVerify = skip
 	case *debug.Transport:
-		tr.Base = getTransportWithTLSValidation(tr.Base, skip)
-	case *s2s.Transport:
 		tr.Base = getTransportWithTLSValidation(tr.Base, skip)
 	case *oauth2.Transport:
 		tr.Base = getTransportWithTLSValidation(tr.Base, skip)
@@ -249,11 +258,67 @@ func (c C) PostRequest(ctx context.Context, url, contentType string, body io.Rea
 	return ActivityPubRequest(ctx, url, contentType, body)
 }
 
+var ErrRetry = errors.Newf("retry")
+
 func (c C) Do(req *http.Request) (*http.Response, error) {
 	if c.c == nil {
 		c.c = defaultClient
 	}
-	return c.c.Do(req)
+
+	try := 0
+	roundTripFn := func(req *http.Request) (*http.Response, error) {
+		lc := lw.Ctx{}
+		lc["host"] = req.URL.Hostname()
+		if try > 0 {
+			lc["retry"] = try
+		}
+
+		res, err := c.c.Do(req)
+		// NOTE(marius): the client failed for some reason, or we tried with all signing functions.
+		if try == len(c.authFns) || err != nil {
+			return res, err
+		}
+		try++
+
+		switch res.StatusCode {
+		case http.StatusServiceUnavailable:
+			// NOTE(marius): this is a hack for mastoart.social
+			// which returns a 503 if it encountered previous errors.
+			fallthrough
+		case http.StatusBadRequest:
+			// NOTE(marius): this is a hack for tags.pub that doesn't
+			// return a 403 or 401 error status on failing signatures
+			// See https://todo.sr.ht/~mariusor/go-activitypub/473
+			fallthrough
+		case http.StatusNotFound:
+			// NOTE(marius): many services, among which the GoActivityPub ones, return not found
+			// for resources that are actually forbidden.
+			fallthrough
+		case http.StatusUnauthorized, http.StatusForbidden:
+			// NOTE(marius): Not an acceptable response status, so we want to try again.
+			lc["status"] = res.StatusCode
+			c.l.WithContext(lc).Errorf("error response from remote server")
+			_, _ = io.Copy(io.Discard, res.Body)
+			_ = res.Body.Close()
+
+			return nil, ErrRetry
+		default:
+			// NOTE(marius): some kind of success
+			return res, nil
+		}
+	}
+
+	for _, signFn := range c.authFns {
+		if err := signFn(req); err != nil {
+			continue
+		}
+		res, err := roundTripFn(req)
+		if err == nil || !errors.Is(err, ErrRetry) {
+			return res, err
+		}
+	}
+	// NOTE(marius): try without a signing function
+	return roundTripFn(req)
 }
 
 // CtxGet wrapper over the functionality offered by the default http.Client object

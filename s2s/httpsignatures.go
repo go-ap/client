@@ -6,17 +6,14 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
-	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
-	"fmt"
 	"io"
 	"net/http"
 	"slices"
 	"time"
 
-	"git.sr.ht/~mariusor/lw"
 	rfc "github.com/dadrus/httpsig"
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/errors"
@@ -24,17 +21,12 @@ import (
 )
 
 var (
-	nilLogger = lw.Dev(lw.SetOutput(io.Discard))
-
 	digestAlgorithm  = draft.DigestSha256
 	sigValidDuration = time.Hour
 )
 
-type Transport struct {
-	Base http.RoundTripper
-
+type Signer struct {
 	// RFC9421 relevant data
-	skipRFCSignatures bool
 	nonceFn           noncer
 	coveredComponents []string
 	// tag is an application-specific tag for the signature as a String value.
@@ -45,47 +37,33 @@ type Transport struct {
 	Alg   KeyEncoding
 	Key   crypto.PrivateKey
 	Actor *vocab.Actor
-
-	l lw.Logger
 }
 
-type OptionFn func(transport *Transport) error
-
-func WithTransport(tr http.RoundTripper) OptionFn {
-	return func(h *Transport) error {
-		h.Base = tr
-		return nil
-	}
-}
-
-func NoRFC9421(h *Transport) error {
-	h.skipRFCSignatures = true
-	return nil
-}
+type OptionFn func(transport *Signer) error
 
 func WithNonce(nonceFn func() (string, error)) OptionFn {
-	return func(h *Transport) error {
+	return func(h *Signer) error {
 		h.nonceFn = nonceFn
 		return nil
 	}
 }
 
 func WithCoveredComponents(comp ...string) OptionFn {
-	return func(h *Transport) error {
+	return func(h *Signer) error {
 		h.coveredComponents = comp
 		return nil
 	}
 }
 
 func WithAlg(alg KeyEncoding) OptionFn {
-	return func(h *Transport) error {
+	return func(h *Signer) error {
 		h.Alg = alg
 		return nil
 	}
 }
 
 func WithActor(act *vocab.Actor, prv crypto.PrivateKey) OptionFn {
-	return func(h *Transport) error {
+	return func(h *Signer) error {
 		h.Actor = act
 		h.Key = prv
 
@@ -93,38 +71,24 @@ func WithActor(act *vocab.Actor, prv crypto.PrivateKey) OptionFn {
 	}
 }
 
-func WithLogger(l lw.Logger) OptionFn {
-	return func(h *Transport) error {
-		h.l = l
-		return nil
-	}
-}
-
 func WithApplicationTag(t string) OptionFn {
-	return func(h *Transport) error {
+	return func(h *Signer) error {
 		h.tag = t
 		return nil
 	}
 }
 
-// New initializes the Transport
+// New initializes the Signer
 // that might come from the initialization functions.
-func New(initFns ...OptionFn) *Transport /*, error*/ {
+func New(initFns ...OptionFn) (*Signer, error) {
 	// TODO(marius): we need to add the errors to the return values
-	h := new(Transport)
-	//h.nonceFn = randomNonce
-	h.l = nilLogger
+	h := new(Signer)
 	for _, fn := range initFns {
 		if err := fn(h); err != nil {
-			h.l.Errorf("unable to initialize HTTP Signature transport: %s", err)
-			return h /*, err*/
+			return h, err
 		}
 	}
-	return h /*, nil*/
-}
-
-func randomNonce() (string, error) {
-	return rand.Text(), nil
+	return h, nil
 }
 
 type noncer func() (string, error)
@@ -207,7 +171,7 @@ func rfcAlgorithmFromPrivateKey(key crypto.PrivateKey, typ KeyEncoding) rfc.Sign
 	return alg
 }
 
-func (s *Transport) signRequestRFC(coveredComponents []string) func(req *http.Request) error {
+func (s *Signer) signRequestRFC(coveredComponents []string) func(req *http.Request) error {
 	return func(req *http.Request) error {
 		if s.Actor == nil {
 			return errors.Newf("unable to sign request, Actor is invalid")
@@ -266,147 +230,6 @@ func (s *Transport) signRequestRFC(coveredComponents []string) func(req *http.Re
 	}
 }
 
-var ErrRetry = errors.Newf("retry")
-
-// RoundTrip dispatches the received request after signing it.
-// We currently use the double knocking mechanism Mastodon popularized:
-// * we first attempt to sign the request with RFC9421 compliant signature,
-// * if it failed, we try again using a Cavage draft 8 version signature.
-// Additionally, if everything failed, and we're operating with a fetch request,
-// we make one last, non-signed attempt.
-func (s *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
-	tr := s.Base
-	if tr == nil {
-		tr = http.DefaultTransport
-	}
-	isFetchRequest := slices.Contains([]string{http.MethodGet, http.MethodHead}, req.Method)
-
-	coveredComponents := s.coveredComponents
-	if coveredComponents == nil {
-		// NOTE(marius): ideally the caller knows if we're about to sign a Fetch or not,
-		// and provide all necessary covered components at initialization time.
-		coveredComponents = FetchCoveredComponents
-		if !isFetchRequest {
-			coveredComponents = append(coveredComponents, AdditionalPostCoveredComponents...)
-		}
-	}
-	roundTripFn := func(req *http.Request, signFn func(*http.Request) error, l lw.Logger) (*http.Response, error) {
-		lastTry := false
-		lc := lw.Ctx{}
-		if signFn == nil {
-			lastTry = true
-		} else {
-			lc["key-type"] = fmt.Sprintf("%T", s.Key)
-			if s.Actor != nil {
-				lc["actor"] = s.Actor.ID
-				if s.Actor.PublicKey.ID != "" {
-					lc["key-id"] = s.Actor.PublicKey.ID
-				}
-			}
-			if err := signFn(req); err != nil {
-				lc["err"] = err
-				l.WithContext(lc).Errorf("failed to sign request")
-				return nil, ErrRetry
-			}
-		}
-		lc["host"] = req.URL.Hostname()
-
-		res, err := tr.RoundTrip(req)
-		if lastTry || err != nil {
-			return res, err
-		}
-
-		switch res.StatusCode {
-		case http.StatusServiceUnavailable:
-			// NOTE(marius): this is a hack for mastoart.social
-			// which returns a 503 if it encountered previous errors.
-			fallthrough
-		case http.StatusBadRequest:
-			// NOTE(marius): this is a hack for tags.pub that doesn't
-			// return a 403 or 401 error status on failing signatures
-			// See https://todo.sr.ht/~mariusor/go-activitypub/473
-			fallthrough
-		case http.StatusNotFound:
-			// NOTE(marius): many services, among which the GoActivityPub ones, return not found
-			// for resources that are actually forbidden.
-			fallthrough
-		case http.StatusUnauthorized, http.StatusForbidden:
-			// NOTE(marius): Not an acceptable response status, so we want to try again.
-			lc["status"] = res.StatusCode
-			l.WithContext(lc).Errorf("error response from remote server")
-			_, _ = io.Copy(io.Discard, res.Body)
-			_ = res.Body.Close()
-
-			return nil, ErrRetry
-		default:
-			// NOTE(marius): some kind of success
-			return res, nil
-		}
-	}
-
-	or := *req
-
-	if or.URL != nil && or.URL.Path == "" {
-		or.URL.Path = "/"
-	}
-
-	lctx := lw.Ctx{}
-	var res *http.Response
-	var err error
-	if s.Actor != nil && s.Key != nil {
-		// NOTE(marius): we're to sign the request, so we need to copy the body
-		var buff []byte
-		if or.Body != nil {
-			if buff, err = io.ReadAll(or.Body); err != nil {
-				return nil, err
-			}
-		}
-		if !s.skipRFCSignatures {
-			lctx["tries"] = 0
-			lctx["sig-alg"] = "rfc9421"
-			// NOTE(marius): try #1: use RFC9421 signature
-			res, err = roundTripFn(cloneRequest(&or, buff), s.signRequestRFC(coveredComponents), s.l.WithContext(lctx))
-			if err == nil || !errors.Is(err, ErrRetry) {
-				return res, err
-			}
-			if res != nil && res.Body != nil {
-				_ = res.Body.Close()
-			}
-		}
-
-		// NOTE(marius): try #2: use Cavage-12 draft signature
-		lctx["tries"] = 1
-		lctx["sig-alg"] = "draft"
-		res, err = roundTripFn(cloneRequest(&or, buff), s.signRequestDraft, s.l.WithContext(lctx))
-		if err == nil || !errors.Is(err, ErrRetry) {
-			return res, err
-		}
-
-		// NOTE(marius): if draft signatures failed also, and this is not
-		// a request that we can retry w/o a signature, we return the resulting
-		// errors.
-		if err != nil && errors.Is(err, ErrRetry) && !isFetchRequest {
-			return res, errors.Unauthorizedf("unauthorized")
-		}
-
-		if res != nil && res.Body != nil {
-			_ = res.Body.Close()
-		}
-	}
-
-	if isFetchRequest {
-		lctx["tries"] = 2
-		lctx["sig-alg"] = "none"
-		// NOTE(marius): This is a mitigation for loading Public Keys for Actors on other instances,
-		// which can create an infinite loop of requests if that instance tries to do an authorize-fetch
-		// for our signing Actor.
-		// There are more details in ticket: https://todo.sr.ht/~mariusor/go-activitypub/301
-		return roundTripFn(&or, nil, s.l.WithContext(lctx))
-	}
-
-	return nil, errors.Unauthorizedf("unauthorized")
-}
-
 type KeyEncoding int
 
 const (
@@ -432,7 +255,7 @@ func keyMismatchErr(pk crypto.PrivateKey, pub crypto.PublicKey) error {
 	return errors.Newf("unable to sign request, mismatch between the Actor's public and private key: %T : %T", pub, pk)
 }
 
-func (s *Transport) signRequestDraft(req *http.Request) error {
+func (s *Signer) signRequestDraft(req *http.Request) error {
 	if s.Actor == nil {
 		return errors.Newf("unable to sign request, Actor is invalid")
 	}
@@ -491,14 +314,19 @@ func (s *Transport) signRequestDraft(req *http.Request) error {
 	return sig.SignRequest(s.Key, string(keyID), req, bodyBuf.Bytes())
 }
 
-var _ http.RoundTripper = new(Transport)
-
-// cloneRequest returns a clone of the provided *http.Request.
-// The clone is a shallow copy of the struct and its Header map.
-func cloneRequest(r *http.Request, buff []byte) *http.Request {
-	r2 := r.Clone(r.Context())
-	if buff != nil {
-		r2.Body = io.NopCloser(bytes.NewReader(buff))
+func (s *Signer) SignRFC9421(req *http.Request) error {
+	coveredComponents := s.coveredComponents
+	if coveredComponents == nil {
+		// NOTE(marius): ideally the caller knows if we're about to sign a Fetch or not,
+		// and provide all necessary covered components at initialization time.
+		coveredComponents = FetchCoveredComponents
+		if !slices.Contains([]string{http.MethodGet, http.MethodHead}, req.Method) {
+			coveredComponents = append(coveredComponents, AdditionalPostCoveredComponents...)
+		}
 	}
-	return r2
+	return s.signRequestRFC(coveredComponents)(req)
+}
+
+func (s *Signer) SignDraft(req *http.Request) error {
+	return s.signRequestDraft(req)
 }

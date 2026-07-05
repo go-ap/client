@@ -5,16 +5,13 @@ import (
 	"crypto"
 	"crypto/x509"
 	"encoding/pem"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"slices"
 	"strconv"
 	"testing"
-	"time"
 
-	"git.sr.ht/~mariusor/lw"
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/errors"
 	"github.com/google/go-cmp/cmp"
@@ -70,7 +67,7 @@ func TestWithActor(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tr := new(Transport)
+			tr := new(Signer)
 			optionFn := WithActor(tt.args.act, tt.args.prv)
 
 			if err := optionFn(tr); !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
@@ -86,43 +83,6 @@ func TestWithActor(t *testing.T) {
 			if tt.args.prv != nil {
 				if !cmp.Equal(tr.Key, tt.args.prv) {
 					t.Errorf("WithActor() = private key mismatch %s", cmp.Diff(tt.args.prv, tr.Key))
-				}
-			}
-		})
-	}
-}
-
-func TestWithLogger(t *testing.T) {
-	tests := []struct {
-		name    string
-		l       *bytes.Buffer
-		wantErr error
-	}{
-		{
-			name: "empty",
-			l:    nil,
-		},
-		{
-			name: "logger with test output",
-			l:    &bytes.Buffer{},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tr := new(Transport)
-			var ll lw.Logger
-			if tt.l != nil {
-				ll = lw.Dev(lw.SetOutput(tt.l))
-			}
-			optionFn := WithLogger(ll)
-
-			if err := optionFn(tr); !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("WithLogger() = error %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
-			}
-
-			if tr.l == nil {
-				if tr.l != ll {
-					t.Errorf("WithLogger() should not be nil")
 				}
 			}
 		})
@@ -148,7 +108,7 @@ func TestWithApplicationTag(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tr := new(Transport)
+			tr := new(Signer)
 			optionFn := WithApplicationTag(tt.t)
 
 			if err := optionFn(tr); !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
@@ -165,17 +125,18 @@ func TestNew(t *testing.T) {
 	tests := []struct {
 		name    string
 		initFns []OptionFn
-		want    *Transport
+		want    *Signer
+		wantErr error
 	}{
 		{
 			name:    "empty",
 			initFns: nil,
-			want:    &Transport{},
+			want:    &Signer{},
 		},
 		{
 			name:    "with Actor",
 			initFns: []OptionFn{WithActor(actorED25519, prvEd25519)},
-			want: &Transport{
+			want: &Signer{
 				Key:   prvEd25519,
 				Actor: actorED25519,
 			},
@@ -183,8 +144,12 @@ func TestNew(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := New(tt.initFns...); !cmp.Equal(got, tt.want, cmpopts.IgnoreUnexported(http.Transport{}, Transport{})) {
-				t.Errorf("New() = %s", cmp.Diff(tt.want, got, cmpopts.IgnoreUnexported(http.Transport{}, Transport{})))
+			got, gotErr := New(tt.initFns...)
+			if !cmp.Equal(gotErr, tt.wantErr) {
+				t.Errorf("New() = error %s", cmp.Diff(tt.wantErr, gotErr, EquateWeakErrors))
+			}
+			if !cmp.Equal(got, tt.want, cmpopts.IgnoreUnexported(http.Transport{}, Signer{})) {
+				t.Errorf("New() = %s", cmp.Diff(tt.want, got, cmpopts.IgnoreUnexported(http.Transport{}, Signer{})))
 			}
 		})
 	}
@@ -209,236 +174,6 @@ func mockPostReq(body []byte, hh ...url.Values) *http.Request {
 	}
 	r.Header.Add("Content-Length", strconv.Itoa(len(body)))
 	return r
-}
-
-func TestTransport_RoundTrip(t *testing.T) {
-	tests := []struct {
-		name       string
-		initFns    []OptionFn
-		handler    http.HandlerFunc
-		req        *http.Request
-		wantStatus int
-		wantBody   []byte
-		wantErr    error
-	}{
-		{
-			name: "empty",
-			req:  httptest.NewRequest(http.MethodGet, "http://example.com", nil),
-			handler: func(w http.ResponseWriter, _ *http.Request) {
-				w.WriteHeader(http.StatusOK)
-			},
-			wantStatus: http.StatusOK,
-		},
-		{
-			name: "no RFC9421 - ED25519",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				if sigInput := r.Header.Get("Signature-Input"); sigInput != "" {
-					t.Errorf("RoundTrip() Signature-Input should not exist for cavage-12 signature: %s", sigInput)
-				}
-				if sig := r.Header.Get("Signature"); sig != "" {
-					t.Logf("RoundTrip() Signature: %s", sig)
-				}
-				w.WriteHeader(http.StatusOK)
-			},
-			initFns: []OptionFn{WithActor(actorED25519, prvEd25519), NoRFC9421},
-			req: mockPostReq([]byte("test"), url.Values{
-				"Date": []string{time.Now().Format(http.TimeFormat)},
-				"Host": []string{"example.com"},
-			}),
-			wantStatus: http.StatusOK,
-		},
-		{
-			name: "no RFC9421 - RSA",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				if sigInput := r.Header.Get("Signature-Input"); sigInput != "" {
-					t.Errorf("RoundTrip() Signature-Input should not exist for cavage-12 signature: %s", sigInput)
-				}
-				if sig := r.Header.Get("Signature"); sig != "" {
-					t.Logf("RoundTrip() Signature: %s", sig)
-				}
-				w.WriteHeader(http.StatusOK)
-			},
-			initFns: []OptionFn{WithActor(actorRSA, prvRSA), NoRFC9421},
-			req: mockPostReq([]byte("test"), url.Values{
-				"Date": []string{time.Now().Format(http.TimeFormat)},
-				"Host": []string{"example.com"},
-			}),
-			wantStatus: http.StatusOK,
-		},
-		{
-			name: "no RFC9421 - ECDSA",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				if sigInput := r.Header.Get("Signature-Input"); sigInput != "" {
-					t.Errorf("RoundTrip() Signature-Input should not exist for cavage-12 signature: %s", sigInput)
-				}
-				if sig := r.Header.Get("Signature"); sig != "" {
-					t.Logf("RoundTrip() Signature: %s", sig)
-				}
-				w.WriteHeader(http.StatusOK)
-			},
-			initFns: []OptionFn{WithActor(actorECDSA, prvECDSA), NoRFC9421},
-			req: mockPostReq([]byte("test"), url.Values{
-				"Date": []string{time.Now().Format(http.TimeFormat)},
-				"Host": []string{"example.com"},
-			}),
-			wantStatus: http.StatusOK,
-		},
-		{
-			name: "with actor - ED25519",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				if sig := r.Header.Get("Signature"); sig != "" {
-					t.Logf("RoundTrip() Signature: %s", sig)
-				}
-				if sigInput := r.Header.Get("Signature-Input"); sigInput != "" {
-					t.Logf("RoundTrip() Signature-Input: %s", sigInput)
-				}
-				w.WriteHeader(http.StatusOK)
-			},
-			req: mockPostReq([]byte("test"), url.Values{
-				"Host": []string{"example.com"},
-				"Date": []string{time.Now().Format(http.TimeFormat)},
-			}),
-			initFns:    []OptionFn{WithActor(actorED25519, prvEd25519)},
-			wantStatus: http.StatusOK,
-			wantErr:    nil,
-		},
-		{
-			name: "with actor - RSA",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				if sig := r.Header.Get("Signature"); sig != "" {
-					t.Logf("RoundTrip() Signature: %s", sig)
-				}
-				if sigInput := r.Header.Get("Signature-Input"); sigInput != "" {
-					t.Logf("RoundTrip() Signature-Input: %s", sigInput)
-				}
-				w.WriteHeader(http.StatusOK)
-			},
-			req: mockPostReq([]byte("test"), url.Values{
-				"Host": []string{"example.com"},
-				"Date": []string{time.Now().Format(http.TimeFormat)},
-			}),
-			initFns:    []OptionFn{WithActor(actorRSA, prvRSA)},
-			wantStatus: http.StatusOK,
-			wantErr:    nil,
-		},
-		{
-			name: "with actor - ECDSA",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				if sig := r.Header.Get("Signature"); sig != "" {
-					t.Logf("RoundTrip() Signature: %s", sig)
-				}
-				if sigInput := r.Header.Get("Signature-Input"); sigInput != "" {
-					t.Logf("RoundTrip() Signature-Input: %s", sigInput)
-				}
-				w.WriteHeader(http.StatusOK)
-			},
-			req: mockPostReq([]byte("test"), url.Values{
-				"Host": []string{"example.com"},
-				"Date": []string{time.Now().Format(http.TimeFormat)},
-			}),
-			initFns:    []OptionFn{WithActor(actorECDSA, prvECDSA)},
-			wantStatus: http.StatusOK,
-			wantErr:    nil,
-		},
-		{
-			name: "with actor - ED25519, two tries",
-			handler: func() http.HandlerFunc {
-				authorized := false
-				return func(w http.ResponseWriter, r *http.Request) {
-					if sig := r.Header.Get("Signature"); sig != "" {
-						t.Logf("RoundTrip() Signature: %s", sig)
-					}
-					if sigInput := r.Header.Get("Signature-Input"); sigInput != "" {
-						t.Logf("RoundTrip() Signature-Input: %s", sigInput)
-					}
-					if !authorized {
-						w.WriteHeader(http.StatusUnauthorized)
-						authorized = true
-						return
-					}
-					w.WriteHeader(http.StatusOK)
-				}
-			}(),
-			req: mockPostReq([]byte("test"), url.Values{
-				"Host": []string{"example.com"},
-				"Date": []string{time.Now().Format(http.TimeFormat)},
-			}),
-			initFns:    []OptionFn{WithActor(actorED25519, prvEd25519)},
-			wantStatus: http.StatusOK,
-			wantErr:    nil,
-		},
-		{
-			name: "with actor - ED25519, two failures",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				if sig := r.Header.Get("Signature"); sig != "" {
-					t.Logf("RoundTrip() Signature: %s", sig)
-				}
-				if sigInput := r.Header.Get("Signature-Input"); sigInput != "" {
-					t.Logf("RoundTrip() Signature-Input: %s", sigInput)
-				}
-				w.WriteHeader(http.StatusUnauthorized)
-			},
-			req: mockPostReq([]byte("test"), url.Values{
-				"Host": []string{"example.com"},
-				"Date": []string{time.Now().Format(http.TimeFormat)},
-			}),
-			initFns:    []OptionFn{WithActor(actorED25519, prvEd25519)},
-			wantStatus: http.StatusOK,
-			wantErr:    errors.Unauthorizedf("unauthorized"),
-		},
-		{
-			name: "tags.pub failure with status 400",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusBadRequest)
-			},
-			req: mockGetReq(url.Values{
-				"Host": []string{"example.com"},
-				"Date": []string{time.Now().Format(http.TimeFormat)},
-			}),
-			initFns:    []OptionFn{WithActor(actorED25519, prvEd25519)},
-			wantStatus: http.StatusBadRequest,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.handler != nil {
-				server := httptest.NewServer(tt.handler)
-				defer server.Close()
-
-				su, _ := url.Parse(server.URL)
-				if tt.req != nil && su != nil {
-					tt.req.URL.Host = su.Host
-				}
-			}
-
-			dt := New(tt.initFns...)
-			got, err := dt.RoundTrip(tt.req)
-			if !cmp.Equal(tt.wantErr, err, EquateWeakErrors) {
-				t.Fatalf("RoundTrip() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
-			}
-			if got == nil {
-				if tt.wantErr == nil {
-					t.Errorf("RoundTrip() nil response when no error expected")
-				}
-				return
-			}
-
-			if tt.wantStatus != got.StatusCode {
-				t.Errorf("RoundTrip() invalid status received = %s, wanted %d %s", got.Status, tt.wantStatus, http.StatusText(tt.wantStatus))
-				return
-			}
-			if tt.wantBody != nil {
-				resBody, err := io.ReadAll(got.Body)
-				if err != nil {
-					t.Errorf("RoundTrip() unable to read response body = %s", err)
-				}
-				if !bytes.Equal(resBody, tt.wantBody) {
-					t.Errorf("RoundTrip() invalid response body received = %s, wanted %s", resBody, tt.wantBody)
-				}
-			}
-		})
-	}
 }
 
 var (
@@ -588,7 +323,7 @@ func TestWithCoveredComponents(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tr := new(Transport)
+			tr := new(Signer)
 			optionFn := WithCoveredComponents(tt.comp...)
 
 			if err := optionFn(tr); !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
