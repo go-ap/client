@@ -263,6 +263,27 @@ func (c C) PostRequest(ctx context.Context, url, contentType string, body io.Rea
 
 var ErrRetry = errors.Newf("retry")
 
+// cloneRequest returns a clone of the provided *http.Request.
+// The clone is a shallow copy of the struct and its Header map.
+func cloneRequest(r *http.Request, last bool) *http.Request {
+	r2 := r.Clone(r.Context())
+	if r.Body != nil {
+		ob := r.Body
+		buff, err := io.ReadAll(r.Body)
+		if err == nil && buff != nil {
+			if !last {
+				// NOTE(marius): this is the last try,
+				// so we don't need the original request to have a valid body
+				r.Body = io.NopCloser(bytes.NewReader(buff))
+			}
+			r2.Body = io.NopCloser(bytes.NewReader(buff))
+		}
+		// NOTE(marius): we close the old request body
+		_ = ob.Close()
+	}
+	return r2
+}
+
 func (c C) Do(req *http.Request) (*http.Response, error) {
 	if c.c == nil {
 		c.c = defaultClient
@@ -272,6 +293,14 @@ func (c C) Do(req *http.Request) (*http.Response, error) {
 		req.Header.Set("User-Agent", c.ua)
 	}
 
+	if len(c.authFns) > 0 {
+		return c.doRetry(req)
+	}
+	// NOTE(marius): try without a signing function
+	return c.c.Do(req)
+}
+
+func (c C) doRetry(req *http.Request) (res *http.Response, err error) {
 	try := 0
 	roundTripFn := func(req *http.Request) (*http.Response, error) {
 		lc := lw.Ctx{}
@@ -315,17 +344,17 @@ func (c C) Do(req *http.Request) (*http.Response, error) {
 		}
 	}
 
-	for _, signFn := range c.authFns {
-		if err := signFn(req); err != nil {
+	for i, signFn := range c.authFns {
+		r2 := cloneRequest(req, i == len(c.authFns)-1)
+		if err = signFn(r2); err != nil {
 			continue
 		}
-		res, err := roundTripFn(req)
+		res, err = roundTripFn(r2)
 		if err == nil || !errors.Is(err, ErrRetry) {
-			return res, err
+			break
 		}
 	}
-	// NOTE(marius): try without a signing function
-	return roundTripFn(req)
+	return res, err
 }
 
 // CtxGet wrapper over the functionality offered by the default http.Client object
