@@ -311,7 +311,7 @@ func (c C) doRetry(req *http.Request) (res *http.Response, err error) {
 
 		res, err := c.c.Do(req)
 		// NOTE(marius): the client failed for some reason, or we tried with all signing functions.
-		if try == len(c.authFns) || err != nil {
+		if try == len(c.authFns)-1 || err != nil {
 			return res, err
 		}
 		try++

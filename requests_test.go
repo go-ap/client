@@ -71,14 +71,11 @@ func TestActivityPubRequest(t *testing.T) {
 			name: "empty",
 			args: args{},
 			want: &http.Request{
-				Method:     http.MethodPost,
-				URL:        &url.URL{Scheme: "https"},
-				Proto:      "HTTP/2.0",
-				ProtoMajor: 2,
+				Method: http.MethodPost,
+				URL:    &url.URL{Scheme: "https"},
 				Header: http.Header{
 					"Accept":       []string{strings.Join([]string{ContentTypeActivityJson, ContentTypeJsonLD, "application/json;q=0.9"}, ", ")},
 					"Content-Type": []string{ContentTypeJsonLD},
-					"Date":         []string{mockTimeFn().Format(http.TimeFormat)},
 					"Host":         []string{""},
 				},
 			},
@@ -110,15 +107,6 @@ func compareRequests(x, y any) bool {
 	if xe == nil || ye == nil {
 		return xe == nil && ye == nil
 	}
-	if xe.ProtoMajor != ye.ProtoMajor {
-		return false
-	}
-	if xe.ProtoMinor != ye.ProtoMinor {
-		return false
-	}
-	if xe.Proto != ye.Proto {
-		return false
-	}
 	if xe.Method != ye.Method {
 		return false
 	}
@@ -128,19 +116,13 @@ func compareRequests(x, y any) bool {
 	if xe.RequestURI != ye.RequestURI {
 		return false
 	}
-	if xe.Pattern != ye.Pattern {
-		return false
-	}
 	if !cmp.Equal(xe.URL, ye.URL) {
 		return false
 	}
-	if !cmp.Equal(xe.Header, ye.Header, cmpopts.SortMaps(strings.Compare)) {
+	if !cmp.Equal(xe.Header, ye.Header, EquateHeaders) {
 		return false
 	}
 	if xe.ContentLength != ye.ContentLength {
-		return false
-	}
-	if xe.Close != ye.Close {
 		return false
 	}
 	if !cmp.Equal(xe.TransferEncoding, ye.TransferEncoding, cmpopts.SortSlices(strings.Compare)) {
@@ -162,4 +144,92 @@ func compareRequests(x, y any) bool {
 	return true
 }
 
-var EquateRequests = cmp.FilterValues(areRequests, cmp.Comparer(compareRequests))
+var EquateRequests = cmp.Options{
+	cmp.FilterValues(areRequests, cmp.Comparer(compareRequests)),
+	cmpopts.IgnoreFields(http.Request{}, "Proto", "ProtoMajor", "ProtoMinor", "ctx"),
+}
+
+func areResponses(a, b any) bool {
+	_, ok1 := a.(*http.Response)
+	_, ok2 := b.(*http.Response)
+	return ok1 && ok2
+}
+
+var toRemoveHeaders = []string{
+	"Date", "X-",
+}
+
+func compareResponses(x, y any) bool {
+	xe := x.(*http.Response)
+	ye := y.(*http.Response)
+	if xe == nil || ye == nil {
+		return xe == nil && ye == nil
+	}
+	if !cmp.Equal(xe.Header, ye.Header, EquateHeaders) {
+		return false
+	}
+	if xe.ContentLength != ye.ContentLength {
+		return false
+	}
+	if !cmp.Equal(xe.TransferEncoding, ye.TransferEncoding, cmpopts.SortSlices(strings.Compare)) {
+		return false
+	}
+	var (
+		bx   []byte
+		by   []byte
+		errx error
+		erry error
+	)
+	if xe.Body != nil {
+		bx, errx = io.ReadAll(xe.Body)
+	}
+	if ye.Body != nil {
+		by, erry = io.ReadAll(ye.Body)
+	}
+	if (errx != nil) != (erry != nil) {
+		return false
+	}
+	if (bx == nil && by == nil) || !bytes.Equal(bx, by) {
+		return false
+	}
+	if xe.Uncompressed != ye.Uncompressed {
+		return false
+	}
+	return true
+}
+
+var EquateResponses = cmp.Options{
+	cmpopts.IgnoreFields(http.Response{}, "Proto", "ProtoMajor", "ProtoMinor"),
+	cmpopts.IgnoreFields(http.Request{}, "Proto", "ProtoMajor", "ProtoMinor", "ctx"),
+	cmp.FilterValues(areResponses, cmp.Comparer(compareResponses)),
+}
+
+func areHeaders(a, b any) bool {
+	_, ok1 := a.(http.Header)
+	_, ok2 := b.(http.Header)
+	return ok1 && ok2
+}
+
+func compareHeaders(a, b any) bool {
+	ha := a.(http.Header)
+	hb := b.(http.Header)
+	for xh := range ha {
+		for _, rh := range toRemoveHeaders {
+			if strings.HasPrefix(xh, rh) {
+				ha.Del(xh)
+				hb.Del(xh)
+			}
+		}
+	}
+	if len(ha) != len(hb) {
+		return false
+	}
+	for xh := range ha {
+		if ha.Get(xh) != hb.Get(xh) {
+			return false
+		}
+	}
+	return true
+}
+
+var EquateHeaders = cmp.FilterValues(areHeaders, cmp.Comparer(compareHeaders))

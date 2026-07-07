@@ -1,14 +1,17 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +19,7 @@ import (
 
 	"git.sr.ht/~mariusor/cache"
 	"git.sr.ht/~mariusor/lw"
+	"github.com/carlmjohnson/requests"
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/client/debug"
 	"github.com/go-ap/client/s2s"
@@ -683,6 +687,192 @@ func TestC_LoadIRI(t *testing.T) {
 			}
 			if !cmp.Equal(got, tt.want) {
 				t.Errorf("LoadIRI() got = %s", cmp.Diff(tt.want, got))
+			}
+		})
+	}
+}
+
+func mockPostReq(body []byte, hh ...url.Values) *http.Request {
+	r := httptest.NewRequest(http.MethodPost, "http://example.com", bytes.NewReader(body))
+	for _, h := range hh {
+		for k, v := range h {
+			r.Header[k] = v
+		}
+	}
+	r.Header.Add("Content-Length", strconv.Itoa(len(body)))
+	r.RequestURI = ""
+	return r
+}
+
+func mockGetReq(hh ...url.Values) *http.Request {
+	r := requests.URL("http://example.com")
+	r.Header("Date", TimeNow().Format(http.TimeFormat))
+	for _, h := range hh {
+		for k, v := range h {
+			r.Header(k, v...)
+		}
+	}
+	req, _ := r.Request(context.Background())
+	return req
+}
+
+func TestC_Do(t *testing.T) {
+	TimeNow = mockTimeFn
+
+	type fields struct {
+		ua      string
+		authFns []func(*http.Request) error
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		req     *http.Request
+		handler http.Handler
+		want    *http.Response
+		wantErr error
+	}{
+		{
+			name:   "empty",
+			fields: fields{},
+			req:    mockGetReq(),
+			want: &http.Response{
+				Status:     "404 Not Found",
+				StatusCode: http.StatusNotFound,
+				Header: http.Header{
+					"Content-Length": []string{"19"},
+					"Content-Type":   []string{"text/plain; charset=utf-8"},
+				},
+				ContentLength: 19,
+				Body:          io.NopCloser(bytes.NewBufferString("404 page not found\n")),
+			},
+		},
+		{
+			name:   "with UA",
+			fields: fields{ua: "test-ua"},
+			req:    mockGetReq(),
+			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if ua := r.Header.Get("User-Agent"); ua != "test-ua" {
+					t.Errorf("Invalid user-agent %s, wanted %s", ua, "test-ua")
+				}
+				w.WriteHeader(http.StatusOK)
+			}),
+			want: &http.Response{
+				Status:     "200 OK",
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Length": []string{"0"}},
+			},
+		},
+		{
+			name:   "Post with UA",
+			fields: fields{ua: "test-ua"},
+			req:    mockPostReq([]byte("{}")),
+			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if ua := r.Header.Get("User-Agent"); ua != "test-ua" {
+					t.Errorf("Invalid user-agent %s, wanted %s", ua, "test-ua")
+				}
+				if r.Method != http.MethodPost {
+					t.Errorf("Invalid request method %s, wanted %s", r.Method, http.MethodPost)
+				}
+				w.WriteHeader(http.StatusOK)
+			}),
+			want: &http.Response{
+				Status:     "200 OK",
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Length": []string{"0"}},
+			},
+		},
+		{
+			name: "with random authorization function",
+			fields: fields{authFns: []func(*http.Request) error{
+				func(r *http.Request) error {
+					r.Header.Add("Authorization", "test")
+					return nil
+				},
+			}},
+			req: mockGetReq(),
+			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if auth := r.Header.Get("Authorization"); auth != "test" {
+					t.Errorf("Invalid Authorization header %s, wanted %s", auth, "test")
+				}
+				w.WriteHeader(http.StatusOK)
+			}),
+			want: &http.Response{
+				Status:     "200 OK",
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Length": []string{"0"}},
+			},
+		},
+		{
+			name: "Post with random authorization function",
+			fields: fields{authFns: []func(*http.Request) error{
+				func(r *http.Request) error {
+					r.Header.Add("Authorization", "test")
+					return nil
+				},
+			}},
+			req: mockPostReq([]byte("{}")),
+			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost {
+					t.Errorf("Invalid request method %s, wanted %s", r.Method, http.MethodPost)
+				}
+				w.WriteHeader(http.StatusOK)
+			}),
+			want: &http.Response{
+				Status:     "200 OK",
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Length": []string{"0"}},
+			},
+		},
+		{
+			name: "Post receives 403/200",
+			fields: fields{authFns: []func(*http.Request) error{
+				func(r *http.Request) error {
+					r.Header.Add("Authorization", "test")
+					return nil
+				},
+				func(r *http.Request) error {
+					r.Header.Add("Authorization", "test1")
+					return nil
+				},
+			}},
+			req: mockPostReq([]byte("{}")),
+			handler: func() http.HandlerFunc {
+				cnt := 0
+				return func(w http.ResponseWriter, r *http.Request) {
+					status := http.StatusUnauthorized
+					if cnt > 0 {
+						status = http.StatusOK
+					}
+					w.WriteHeader(status)
+				}
+			}(),
+			want: &http.Response{
+				Status:     "200 OK",
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Length": []string{"0"}},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(tt.handler)
+
+			cl := srv.Client()
+			c := C{
+				c:       cl,
+				l:       lw.Nil(),
+				ua:      tt.fields.ua,
+				authFns: tt.fields.authFns,
+			}
+
+			got, err := c.Do(tt.req)
+			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors(srv.URL)) {
+				t.Errorf("Do() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors(srv.URL)))
+				return
+			}
+			tt.want.Request = tt.req
+			if !cmp.Equal(got, tt.want, EquateResponses) {
+				t.Errorf("Do() got = %s", cmp.Diff(tt.want, got, EquateResponses))
 			}
 		})
 	}
