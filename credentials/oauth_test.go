@@ -848,7 +848,8 @@ func TestAuthorize(t *testing.T) {
 				_, _ = w.Write(raw)
 			},
 			want: &C2S{
-				IRI: "http://example.com/~jdoe",
+				IRI:           "http://example.com/~jdoe",
+				WebFingerAcct: "jdoe@example.com",
 				Conf: oauth2.Config{
 					Endpoint: oauth2.Endpoint{
 						AuthURL:  "http://example.com/~jdoe/auth",

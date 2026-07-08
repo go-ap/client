@@ -37,10 +37,11 @@ var authWaitDuration = 90 * time.Second
 var RandPort = minPort + mrand.IntN(65536-minPort)
 
 type C2S struct {
-	IRI      vocab.IRI
-	Conf     oauth2.Config
-	Tok      *oauth2.Token
-	ProxyURL vocab.IRI
+	IRI           vocab.IRI
+	Conf          oauth2.Config
+	Tok           *oauth2.Token
+	ProxyURL      vocab.IRI
+	WebFingerAcct string
 }
 
 type ClientConfig struct {
@@ -115,6 +116,7 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 	}
 
 	app.IRI = actor.ID
+	app.WebFingerAcct, _ = buildWebFingerAcctResource(*actor)
 	app.Conf = oauth2.Config{
 		ClientID:     auth.ClientID,
 		ClientSecret: auth.ClientSecret,
@@ -164,6 +166,14 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 	}
 
 	return app, err
+}
+
+func buildWebFingerAcctResource(act vocab.Actor) (string, error) {
+	au, err := act.ID.URL()
+	if err != nil {
+		return "", err
+	}
+	return vocab.PreferredNameOf(act) + "@" + au.Hostname(), nil
 }
 
 type RequestAuthorizer interface {
