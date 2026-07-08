@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -572,9 +572,6 @@ func Test_waitForOAuth2Callback(t *testing.T) {
 		},
 	}
 
-	// NOTE(marius): to avoid calling xdg-open in openbrowser()
-	t.Setenv(testingEnvVariable, "1")
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx, cancelFn := context.WithTimeout(context.Background(), time.Second)
@@ -583,7 +580,7 @@ func Test_waitForOAuth2Callback(t *testing.T) {
 			conf := oauth2.Config{
 				ClientID:     "test-client",
 				ClientSecret: "no-s3cr3t",
-				RedirectURL:  "http://" + LocalInterfaceAddress + ":" + strconv.Itoa(RandPort),
+				RedirectURL:  "http://" + RandomLocalAddress().String(),
 				Scopes:       []string{"s1", "s2"},
 			}
 			if tt.handlerFn == nil {
@@ -855,7 +852,7 @@ func TestAuthorize(t *testing.T) {
 						AuthURL:  "http://example.com/~jdoe/auth",
 						TokenURL: "http://example.com/~jdoe/tok",
 					},
-					RedirectURL: "http://" + LocalInterfaceAddress + ":" + strconv.Itoa(RandPort),
+					RedirectURL: "http://" + RandomLocalAddress().String(),
 				},
 			},
 		},
@@ -878,5 +875,43 @@ func TestAuthorize(t *testing.T) {
 				t.Errorf("Authorize() got = %s", cmp.Diff(tt.want, got, ignoreTokenSource, ignoreOAuth2Config))
 			}
 		})
+	}
+}
+
+func Test_openbrowser(t *testing.T) {
+	type args struct {
+		url string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name:    "empty",
+			args:    args{},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := openbrowser(tt.args.url); (err != nil) != tt.wantErr {
+				t.Errorf("openbrowser() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestRandomLocalAddress(t *testing.T) {
+	want := &net.TCPAddr{
+		IP:   net.IPv4(127, 0, 0, 1),
+		Port: randPort,
+		Zone: "",
+	}
+	if got := RandomLocalAddress(); !cmp.Equal(got, want) {
+		t.Errorf("RandomLocalAddress() = %s", cmp.Diff(want, got))
+	}
+	if got := RandomLocalAddress(); !cmp.Equal(got, want) {
+		t.Errorf("RandomLocalAddress() = %s", cmp.Diff(want, got))
 	}
 }

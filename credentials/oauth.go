@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
@@ -28,13 +27,30 @@ const (
 	successCallbackHTML = `<html><title>Success</title><body>You can now close this browser window/tab.</body></html>`
 	errorCallbackHTML   = `<html><title>Error</title><body>%s</body></html>`
 
-	minPort               = 1024
-	LocalInterfaceAddress = "127.0.0.1"
+	minPort = 1024
+	maxPort = 65536
 )
+
+var localInterfaceAddress = net.IPv4(127, 0, 0, 1)
 
 var authWaitDuration = 90 * time.Second
 
-var RandPort = minPort + mrand.IntN(65536-minPort)
+var randPort = func() int {
+	// NOTE(marius): different ports between runs, but same port for multiple calls to RandomLocalAddress()
+	return minPort + mrand.IntN(maxPort-minPort)
+}()
+
+// RandomLocalAddress returns a net.TCPAddr struct that can be used for net.ListenTCP
+// using a random port per application run.
+func RandomLocalAddress() *net.TCPAddr {
+	return &net.TCPAddr{IP: localInterfaceAddress, Port: randPort}
+}
+
+// LocalAddress returns a net.TCPAddr struct that can be used for net.ListenTCP
+// meant to be used for the
+func LocalAddress() *net.TCPAddr {
+	return &net.TCPAddr{IP: localInterfaceAddress}
+}
 
 type C2S struct {
 	IRI           vocab.IRI
@@ -121,7 +137,7 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 		ClientID:     auth.ClientID,
 		ClientSecret: auth.ClientSecret,
 		Endpoint:     getActorOAuthEndpoint(*actor),
-		RedirectURL:  "http://" + LocalInterfaceAddress + ":" + strconv.Itoa(RandPort),
+		RedirectURL:  "http://" + RandomLocalAddress().String(),
 	}
 	if auth.RedirectURL != "" {
 		app.Conf.RedirectURL = auth.RedirectURL
@@ -150,7 +166,7 @@ func Authorize(ctx context.Context, actorURL string, auth ClientConfig) (*C2S, e
 		codeVerifier := CodeVerifier()
 		authURL := app.Config().AuthCodeURL(state, oauth2.S256ChallengeOption(codeVerifier))
 		if err := openbrowser(authURL); err != nil {
-			slog.With(slog.String("err", err.Error())).Warn("Unable to open browser window.")
+			slog.With(slog.Any("err", err)).Warn("Unable to open browser window.")
 			slog.With(slog.String("url", authURL)).Info("Please manually open the authorization URL in your browser.")
 		} else {
 			fmt.Printf("Opened browser window for authorization: %s.\n", authURL)
@@ -316,10 +332,9 @@ func OAuth2Client(ctx context.Context, c *C2S) *http.Client {
 	return httpC
 }
 
-const testingEnvVariable = "_ISTEST"
-
 func openbrowser(url string) error {
-	if os.Getenv(testingEnvVariable) != "" {
+	bin, _ := os.Executable()
+	if strings.HasSuffix(bin, ".test") {
 		return nil
 	}
 	var err error
@@ -332,7 +347,7 @@ func openbrowser(url string) error {
 	case "darwin":
 		err = exec.Command("open", url).Start()
 	default:
-		err = fmt.Errorf("unsupported platform")
+		err = fmt.Errorf("unsupported platform %s", runtime.GOOS)
 	}
 	return err
 }
@@ -415,7 +430,7 @@ func waitForOAuth2Callback(ctx context.Context, app *oauth2.Config, state, codeV
 	// authorization server validates the return URL.
 	//
 	// See: https://www.rfc-editor.org/rfc/rfc8252#section-7.3
-	l, err := net.Listen("tcp", LocalInterfaceAddress+":"+strconv.Itoa(RandPort))
+	l, err := net.ListenTCP("tcp", RandomLocalAddress())
 	if err != nil {
 		return nil, err
 	}
