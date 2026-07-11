@@ -21,6 +21,7 @@ import (
 	"git.sr.ht/~mariusor/lw"
 	"github.com/carlmjohnson/requests"
 	vocab "github.com/go-ap/activitypub"
+	"github.com/go-ap/client/c2s"
 	"github.com/go-ap/client/debug"
 	"github.com/go-ap/client/s2s"
 	"github.com/go-ap/errors"
@@ -308,6 +309,11 @@ func TestWithAuthorizationFn(t *testing.T) {
 			name: "RFC9421+Draft Sign Fns",
 			args: []func(*http.Request) error{new(s2s.Signer).SignRFC9421, new(s2s.Signer).SignDraft},
 			want: []func(*http.Request) error{new(s2s.Signer).SignRFC9421, new(s2s.Signer).SignDraft},
+		},
+		{
+			name: "C2S Sign Fn",
+			args: []func(*http.Request) error{c2s.BearerSigner(oauth2.Token{AccessToken: "t", TokenType: "B"}).Sign},
+			want: []func(*http.Request) error{c2s.BearerSigner(oauth2.Token{AccessToken: "t", TokenType: "B"}).Sign},
 		},
 	}
 	for _, tt := range tests {
