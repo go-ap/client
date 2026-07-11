@@ -26,65 +26,53 @@ func TestWithActor(t *testing.T) {
 		prv crypto.PrivateKey
 	}
 	tests := []struct {
-		name    string
-		args    args
-		wantErr error
+		name string
+		args args
 	}{
 		{
-			name:    "empty",
-			args:    args{},
-			wantErr: nil,
+			name: "empty",
+			args: args{},
 		},
 		{
-			name:    "w/ actor, w/o key",
-			args:    args{jdoeActor, nil},
-			wantErr: nil,
+			name: "w/ actor, w/o key",
+			args: args{jdoeActor, nil},
 		},
 		{
-			name:    "w/o actor, w/ key",
-			args:    args{nil, prv},
-			wantErr: nil,
+			name: "w/o actor, w/ key",
+			args: args{nil, prv},
 		},
 		{
-			name:    "w/ broken actor, w/ key",
-			args:    args{&vocab.Actor{ID: "https://example.com/~johndoe"}, prv},
-			wantErr: nil,
+			name: "w/ broken actor, w/ key",
+			args: args{&vocab.Actor{ID: "https://example.com/~johndoe"}, prv},
 		},
 		{
-			name:    "w/ actor, w/ RSA key",
-			args:    args{jdoeActor, prv},
-			wantErr: nil,
+			name: "w/ actor, w/ RSA key",
+			args: args{jdoeActor, prv},
 		},
 		{
-			name:    "w/ actor, w/ ECDSA key",
-			args:    args{actorECDSA, prvECDSA},
-			wantErr: nil,
+			name: "w/ actor, w/ ECDSA key",
+			args: args{actorECDSA, prvECDSA},
 		},
 		{
-			name:    "w/ actor, w/ ED25519 key",
-			args:    args{actorED25519, prvEd25519},
-			wantErr: nil,
+			name: "w/ actor, w/ ED25519 key",
+			args: args{actorED25519, prvEd25519},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tr := new(Signer)
-			optionFn := WithActor(tt.args.act, tt.args.prv)
+			signer := new(Signer)
 
-			if err := optionFn(tr); !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Fatalf("WithActor() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
-			}
-
+			WithActor(tt.args.act, tt.args.prv)(signer)
 			if tt.args.act != nil {
-				if !cmp.Equal(tr.Actor, tt.args.act, EquateItems) {
-					t.Errorf("WithActor() = actor mismatch %s", cmp.Diff(tt.args.act, tr.Actor, EquateItems))
+				if !cmp.Equal(signer.Actor, tt.args.act, EquateItems) {
+					t.Errorf("WithActor() = actor mismatch %s", cmp.Diff(tt.args.act, signer.Actor, EquateItems))
 				}
 			}
 
 			if tt.args.prv != nil {
-				if !cmp.Equal(tr.Key, tt.args.prv) {
-					t.Errorf("WithActor() = private key mismatch %s", cmp.Diff(tt.args.prv, tr.Key))
+				if !cmp.Equal(signer.Key, tt.args.prv) {
+					t.Errorf("WithActor() = private key mismatch %s", cmp.Diff(tt.args.prv, signer.Key))
 				}
 			}
 		})
@@ -93,31 +81,25 @@ func TestWithActor(t *testing.T) {
 
 func TestWithApplicationTag(t *testing.T) {
 	tests := []struct {
-		name    string
-		t       string
-		wantErr error
+		name string
+		t    string
 	}{
 		{
-			name:    "empty",
-			t:       "",
-			wantErr: nil,
+			name: "empty",
+			t:    "",
 		},
 		{
-			name:    "tag",
-			t:       "test-tag",
-			wantErr: nil,
+			name: "tag",
+			t:    "test-tag",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tr := new(Signer)
-			optionFn := WithApplicationTag(tt.t)
+			signer := new(Signer)
 
-			if err := optionFn(tr); !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("WithApplicationTag() = error %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
-			}
-			if tt.t != tr.tag {
-				t.Errorf("WithApplicationTag() = %s, want %s", tr.tag, tt.t)
+			WithApplicationTag(tt.t)(signer)
+			if tt.t != signer.tag {
+				t.Errorf("WithApplicationTag() = %s, want %s", signer.tag, tt.t)
 			}
 		})
 	}
@@ -128,7 +110,6 @@ func TestNew(t *testing.T) {
 		name    string
 		initFns []OptionFn
 		want    *Signer
-		wantErr error
 	}{
 		{
 			name:    "empty",
@@ -146,10 +127,7 @@ func TestNew(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, gotErr := New(tt.initFns...)
-			if !cmp.Equal(gotErr, tt.wantErr) {
-				t.Errorf("New() = error %s", cmp.Diff(tt.wantErr, gotErr, EquateWeakErrors))
-			}
+			got := New(tt.initFns...)
 			if !cmp.Equal(got, tt.want, cmpopts.IgnoreUnexported(http.Transport{}, Signer{})) {
 				t.Errorf("New() = %s", cmp.Diff(tt.want, got, cmpopts.IgnoreUnexported(http.Transport{}, Signer{})))
 			}
@@ -312,10 +290,9 @@ var EquateItems = cmp.FilterValues(areItems, cmp.Comparer(compareItems))
 
 func TestWithCoveredComponents(t *testing.T) {
 	tests := []struct {
-		name    string
-		comp    []string
-		want    OptionFn
-		wantErr error
+		name string
+		comp []string
+		want OptionFn
 	}{
 		{
 			name: "empty",
@@ -325,14 +302,11 @@ func TestWithCoveredComponents(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tr := new(Signer)
-			optionFn := WithCoveredComponents(tt.comp...)
+			signer := new(Signer)
 
-			if err := optionFn(tr); !cmp.Equal(err, tt.wantErr, EquateWeakErrors) {
-				t.Errorf("WithCoveredComponents() = error %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors))
-			}
-			if !slices.Equal(tt.comp, tr.coveredComponents) {
-				t.Errorf("WithCoveredComponents() = %s, want %s", tr.coveredComponents, tt.comp)
+			WithCoveredComponents(tt.comp...)(signer)
+			if !slices.Equal(tt.comp, signer.coveredComponents) {
+				t.Errorf("WithCoveredComponents() = %s, want %s", signer.coveredComponents, tt.comp)
 			}
 		})
 	}

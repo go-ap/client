@@ -39,56 +39,47 @@ type Signer struct {
 	Actor *vocab.Actor
 }
 
-type OptionFn func(transport *Signer) error
+type OptionFn func(transport *Signer)
 
 func WithNonce(nonceFn func() (string, error)) OptionFn {
-	return func(h *Signer) error {
+	return func(h *Signer) {
 		h.nonceFn = nonceFn
-		return nil
 	}
 }
 
 func WithCoveredComponents(comp ...string) OptionFn {
-	return func(h *Signer) error {
+	return func(h *Signer) {
 		h.coveredComponents = comp
-		return nil
 	}
 }
 
 func WithAlg(alg KeyEncoding) OptionFn {
-	return func(h *Signer) error {
+	return func(h *Signer) {
 		h.Alg = alg
-		return nil
 	}
 }
 
 func WithActor(act *vocab.Actor, prv crypto.PrivateKey) OptionFn {
-	return func(h *Signer) error {
+	return func(h *Signer) {
 		h.Actor = act
 		h.Key = prv
-
-		return nil
 	}
 }
 
 func WithApplicationTag(t string) OptionFn {
-	return func(h *Signer) error {
+	return func(h *Signer) {
 		h.tag = t
-		return nil
 	}
 }
 
 // New initializes the Signer
 // that might come from the initialization functions.
-func New(initFns ...OptionFn) (*Signer, error) {
-	// TODO(marius): we need to add the errors to the return values
+func New(initFns ...OptionFn) *Signer {
 	h := new(Signer)
 	for _, fn := range initFns {
-		if err := fn(h); err != nil {
-			return h, err
-		}
+		fn(h)
 	}
-	return h, nil
+	return h
 }
 
 type noncer func() (string, error)

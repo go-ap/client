@@ -124,17 +124,14 @@ func ExampleSigner_SignDraft() {
 	}))
 	defer srv.Close()
 
-	tr, err := New(WithActor(jdoeActor, prv))
-	if err != nil {
-		fmt.Printf("error: %v", err)
-	}
+	signer := New(WithActor(jdoeActor, prv))
 
 	req := httptest.NewRequest(http.MethodGet, srv.URL, nil)
 	host := strings.TrimPrefix(srv.URL, "http://")
 	host = host[:strings.Index(host, ":")]
 	req.Header.Set("Host", host)
 	req.Header.Set("Date", millenium.Format(http.TimeFormat))
-	_ = tr.SignDraft(req)
+	_ = signer.SignDraft(req)
 
 	v, err := draft.NewVerifier(req)
 	if err != nil {
@@ -188,17 +185,14 @@ func ExampleSigner_SignRFC9421() {
 	}))
 	defer srv.Close()
 
-	tr, err := New(WithActor(&exActorRSA, prvKeyRSA), WithAlg(KeyTypePKCS), WithNonce(sameNonce("test")))
-	if err != nil {
-		panic(err)
-	}
+	signer := New(WithActor(&exActorRSA, prvKeyRSA), WithAlg(KeyTypePKCS), WithNonce(sameNonce("test")))
 	req := httptest.NewRequest(http.MethodPost, srv.URL, strings.NewReader(`{"hello": "world"}`))
 	req.Header.Set("Host", "example.com")
 	req.Header.Set("Date", millenium.Format(http.TimeFormat))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Content-Length", "18")
 
-	_ = tr.SignRFC9421(req)
+	_ = signer.SignRFC9421(req)
 	v, err := httpsig.NewVerifier(key(*pubKeyRSA),
 		httpsig.WithValidateAllSignatures(),
 		httpsig.WithCreatedTimestampRequired(false),

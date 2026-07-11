@@ -168,12 +168,7 @@ func TestSkipTLSValidation(t *testing.T) {
 			cl := new(C)
 			cl.c = &http.Client{Transport: tt.tr}
 
-			optionFn := SkipTLSValidation(tt.skip)
-			err := optionFn(cl)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors("")) {
-				t.Errorf("SkipTLSValidation() = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors("")))
-			}
-
+			SkipTLSValidation(tt.skip)(cl)
 			switch tr := cl.c.(*http.Client).Transport.(type) {
 			case *http.Transport:
 				if tr.TLSClientConfig.InsecureSkipVerify != tt.skip {
@@ -241,11 +236,8 @@ func TestWithLogger(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cl := new(C)
-			optionFn := WithLogger(tt.l)
-			err := optionFn(cl)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors("")) {
-				t.Errorf("WithLogger() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors("")))
-			}
+
+			WithLogger(tt.l)(cl)
 			if !cmp.Equal(cl.l, tt.l) {
 				t.Errorf("WithLogger() = %s", cmp.Diff(tt.l, cl.l))
 			}
@@ -273,11 +265,8 @@ func TestWithHTTPClient(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cl := new(C)
-			optionFn := WithHTTPClient(tt.h)
-			err := optionFn(cl)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors("")) {
-				t.Errorf("WithHTTPClient() = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors("")))
-			}
+
+			WithHTTPClient(tt.h)(cl)
 			if !cmp.Equal(cl.c, tt.h, ignoredTransports, equateFuncs) {
 				t.Errorf("WithHTTPClient() = %s", cmp.Diff(tt.h, cl.c, ignoredTransports, equateFuncs))
 			}
@@ -324,11 +313,8 @@ func TestWithAuthorizationFn(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cl := new(C)
-			optionFn := WithAuthorizationFn(tt.args...)
-			err := optionFn(cl)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors("")) {
-				t.Errorf("WithAuthorizationFn() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors("")))
-			}
+
+			WithAuthorizationFn(tt.args...)(cl)
 			if !cmp.Equal(cl.authFns, tt.want, equateFuncs) {
 				t.Errorf("WithAuthorizationFn() = %s", cmp.Diff(tt.want, cl.authFns, equateFuncs))
 			}
@@ -357,11 +343,8 @@ func TestWithUserAgent(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cl := new(C)
-			optionFn := WithUserAgent(tt.ua)
-			err := optionFn(cl)
-			if !cmp.Equal(err, tt.wantErr, EquateWeakErrors("")) {
-				t.Errorf("WithUserAgent() error = %s", cmp.Diff(tt.wantErr, err, EquateWeakErrors("")))
-			}
+
+			WithUserAgent(tt.ua)(cl)
 			if !cmp.Equal(cl.ua, tt.ua) {
 				t.Errorf("WithUserAgent() = %s", cmp.Diff(tt.ua, cl.ua))
 			}

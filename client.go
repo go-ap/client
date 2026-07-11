@@ -61,26 +61,20 @@ type C struct {
 
 // WithHTTPClient sets the http client
 func WithHTTPClient(h *http.Client) OptionFn {
-	return func(c *C) error {
+	return func(c *C) {
 		c.c = h
-		return nil
 	}
 }
 
 func WithAuthorizationFn(fns ...func(*http.Request) error) OptionFn {
-	return func(c *C) error {
-		if fns == nil {
-			return errors.Newf("nil sign function")
-		}
+	return func(c *C) {
 		c.authFns = append(c.authFns, fns...)
-		return nil
 	}
 }
 
 func WithLogger(l lw.Logger) OptionFn {
-	return func(c *C) error {
+	return func(c *C) {
 		c.l = l
-		return nil
 	}
 }
 
@@ -106,24 +100,22 @@ func getTransportWithTLSValidation(rt http.RoundTripper, skip bool) http.RoundTr
 
 // SkipTLSValidation sets the flag for skipping TLS validation on the default HTTP transport.
 func SkipTLSValidation(skip bool) OptionFn {
-	return func(c *C) error {
+	return func(c *C) {
 		if cl, ok := c.c.(*http.Client); ok {
 			getTransportWithTLSValidation(cl.Transport, skip)
 		}
-		return nil
 	}
 }
 
 // WithUserAgent explicitly sets the UserAgent set by the client
 func WithUserAgent(ua string) OptionFn {
-	return func(c *C) error {
+	return func(c *C) {
 		c.ua = ua
-		return nil
 	}
 }
 
-// OptionFn
-type OptionFn func(s *C) error
+// OptionFn is the type designating setup functions accepted by the [client.New] initializer.
+type OptionFn func(s *C)
 
 const MB = 1024 * 1024 * 1024
 
@@ -150,10 +142,7 @@ var (
 func New(o ...OptionFn) *C {
 	c := &C{c: defaultClient, ua: UserAgent, l: nilLogger}
 	for _, fn := range o {
-		err := fn(c)
-		if err != nil {
-			nilLogger.WithContext(lw.Ctx{"opt": fmt.Sprintf("%T", fn), "err": err}).Errorf("failed option call")
-		}
+		fn(c)
 	}
 	return c
 }
