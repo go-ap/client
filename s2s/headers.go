@@ -2,9 +2,15 @@
 
 package s2s
 
-import "github.com/go-fed/httpsig"
+import (
+	"time"
+
+	"github.com/go-fed/httpsig"
+)
 
 var (
+	sigValidDuration = 5 * time.Minute
+
 	// HeadersToSign is the list of headers that will be used to generate the
 	// Draft version of HTTP-Signature
 	//

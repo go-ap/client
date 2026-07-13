@@ -12,17 +12,11 @@ import (
 	"io"
 	"net/http"
 	"slices"
-	"time"
 
 	rfc "github.com/dadrus/httpsig"
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/errors"
 	draft "github.com/go-fed/httpsig"
-)
-
-var (
-	digestAlgorithm  = draft.DigestSha256
-	sigValidDuration = time.Hour
 )
 
 type Signer struct {
@@ -301,7 +295,7 @@ func (s *Signer) signRequestDraft(req *http.Request) error {
 	algo := draftAlgorithmFromPrivateKey(s.Key)
 	secToExpiration := int64(sigValidDuration.Seconds())
 	// NOTE(marius): The only http-signatures accepted by Mastodon instances is "Signature", not "Authorization"
-	sig, _, err := draft.NewSigner([]draft.Algorithm{algo}, digestAlgorithm, headers, draft.Signature, secToExpiration)
+	sig, _, err := draft.NewSigner([]draft.Algorithm{algo}, draft.DigestSha256, headers, draft.Signature, secToExpiration)
 	if err != nil {
 		return err
 	}

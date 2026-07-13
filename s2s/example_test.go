@@ -193,7 +193,7 @@ func ExampleSigner_SignRFC9421() {
 	req.Header.Set("Content-Length", "18")
 
 	_ = signer.SignRFC9421(req)
-	v, err := httpsig.NewVerifier(key(*pubKeyRSA),
+	v, err := httpsig.NewVerifier(kresolver(*pubKeyRSA),
 		httpsig.WithValidateAllSignatures(),
 		httpsig.WithCreatedTimestampRequired(false),
 		httpsig.WithExpiredTimestampRequired(false),
@@ -208,9 +208,9 @@ func ExampleSigner_SignRFC9421() {
 	// Verification error: <nil>
 }
 
-type key rsa.PublicKey
+type kresolver rsa.PublicKey
 
-func (k key) ResolveKey(_ context.Context, keyID string) (httpsig.Key, error) {
+func (k kresolver) ResolveKey(_ context.Context, keyID string) (httpsig.Key, error) {
 	pk := rsa.PublicKey(k)
 	return httpsig.Key{
 		KeyID:     keyID,

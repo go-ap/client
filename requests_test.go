@@ -74,8 +74,8 @@ func TestActivityPubRequest(t *testing.T) {
 				Method: http.MethodPost,
 				URL:    &url.URL{Scheme: "https"},
 				Header: http.Header{
-					"Accept":       []string{strings.Join([]string{ContentTypeActivityJson, ContentTypeJsonLD, "application/json;q=0.9"}, ", ")},
-					"Content-Type": []string{ContentTypeJsonLD},
+					"Accept":       []string{requests.ContentTypeJsonActivity, requests.ContentTypeJsonLD, "application/json;q=0.9"},
+					"Content-Type": []string{requests.ContentTypeJsonLD},
 					"Host":         []string{""},
 				},
 			},

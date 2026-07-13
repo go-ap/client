@@ -20,15 +20,6 @@ import (
 	"golang.org/x/oauth2"
 )
 
-const (
-	ContentTypeJsonLD = requests.ContentTypeJsonLD
-	// ContentTypeActivityJson This specification registers the application/activity+json MIME Media Type
-	// specifically for identifying documents conforming to the Activity Streams 2.0 format.
-	//
-	// https://www.w3.org/TR/activitystreams-core/#media-type
-	ContentTypeActivityJson = requests.ContentTypeActivityJson
-)
-
 type Ctx = lw.Ctx
 
 type RequestSignFn func(*http.Request) error
@@ -117,12 +108,12 @@ func WithUserAgent(ua string) OptionFn {
 // OptionFn is the type designating setup functions accepted by the [client.New] initializer.
 type OptionFn func(s *C)
 
-const MB = 1024 * 1024 * 1024
+const MByte = 1024 * 1024 * 1024
 
 var (
 	defaultClient = &http.Client{
 		Timeout:   10 * time.Second,
-		Transport: cache.Shared(defaultTransport, cache.Mem(MB)),
+		Transport: cache.Shared(defaultTransport, cache.Mem(MByte)),
 	}
 
 	// This is the TCP connect timeout in this instance.
@@ -398,7 +389,7 @@ func (c C) toCollection(ctx context.Context, act vocab.Item, colIRI vocab.IRI) (
 		return "", nil, errf("unable to marshal activity").iri(colIRI)
 	}
 
-	req, err := ActivityPubRequest(ctx, string(colIRI), requests.ContentTypeActivityJson, bytes.NewReader(cont))
+	req, err := ActivityPubRequest(ctx, string(colIRI), requests.ContentTypeJsonActivity, bytes.NewReader(cont))
 	if err != nil {
 		return "", nil, err
 	}

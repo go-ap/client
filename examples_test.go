@@ -15,6 +15,7 @@ import (
 	"github.com/dadrus/httpsig"
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/client/c2s"
+	"github.com/go-ap/client/internal/requests"
 	"github.com/go-ap/client/s2s"
 	"golang.org/x/oauth2"
 )
@@ -68,9 +69,9 @@ func ExampleNew_with_s2s_authorization() {
 		err := vv.Verify(httpsig.MessageFromRequest(r))
 		fmt.Printf("Verify error:    %v\n", err)
 
-		w.Header().Add("Content-Type", ContentTypeActivityJson)
+		w.Header().Add("Content-Type", requests.ContentTypeJsonActivity)
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(signActor)
+		_ = json.NewEncoder(w).Encode(signActor)
 	}))
 
 	sig := s2s.New(s2s.WithActor(signActor, prv), s2s.WithCoveredComponents("@method", "@path"))
@@ -121,18 +122,21 @@ func ExampleNew_with_c2s_authorization() {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("Authorization:   %v\n", r.Header.Get("Authorization"))
 
-		w.Header().Add("Content-Type", ContentTypeActivityJson)
+		w.Header().Add("Content-Type", requests.ContentTypeJsonActivity)
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(signActor)
+		_ = json.NewEncoder(w).Encode(signActor)
 	}))
 
+	// Token obtained in some way from a server, the OAuth2.
+	// The OAuth2 authorization flow is a little too complex to recreate
+	// here in a similar way we did with the HTTP-Signature authorization
+	// Actor in the S2S example.
 	tok := oauth2.Token{
 		AccessToken: "S3CR3TC0D3",
 		TokenType:   "Bearer",
 	}
 
-	sig := c2s.BearerSigner(tok)
-	fetch := New(WithHTTPClient(srv.Client()), WithAuthorizationFn(sig.Sign))
+	fetch := New(WithHTTPClient(srv.Client()), WithAuthorizationFn(c2s.BearerSigner(tok).Sign))
 	actor, err := fetch.Actor(context.Background(), "http://example.com/~jdoe")
 	if err != nil {
 		panic(err)
