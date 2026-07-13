@@ -46,8 +46,9 @@ type C struct {
 	c httpClient
 	l lw.Logger
 
-	ua      string
-	authFns []func(*http.Request) error
+	ua       string
+	authFns  []func(*http.Request) error
+	proxyURL vocab.IRI
 }
 
 // WithHTTPClient sets the http client
@@ -102,6 +103,14 @@ func SkipTLSValidation(skip bool) OptionFn {
 func WithUserAgent(ua string) OptionFn {
 	return func(c *C) {
 		c.ua = ua
+	}
+}
+
+// WithProxyURL explicitly sets a ProxyURL to be used in order for fetch Social API requests
+// to be proxied through the ActivityPub server it designates.
+func WithProxyURL(u vocab.IRI) OptionFn {
+	return func(c *C) {
+		c.proxyURL = u
 	}
 }
 

@@ -1,4 +1,4 @@
-package proxy
+package client
 
 import (
 	"bytes"
@@ -8,29 +8,22 @@ import (
 	"slices"
 	"strings"
 
-	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/errors"
 )
 
-type Transport struct {
-	Base http.RoundTripper
-
-	ProxyURL vocab.IRI
-}
-
 var shouldProxyStatuses = []int{http.StatusForbidden, http.StatusUnauthorized, http.StatusNotFound}
 
-// RoundTrip only accepts HTTP GET requests to a remote server.
+// tryProxiedRequest only accepts HTTP GET requests to a remote server.
 // If a 403 (or 401, for Mastodon servers with secure fetch) error is returned by the Base round-tripper,
-// and we have a valid ProxyURL value, we try to request the original HTTP GET URL through the proxying mechanism
+// and we have a valid proxyURL value, we try to request the original HTTP GET URL through the proxying mechanism
 // provided by the server owning the proxy URL.
 // If the server requires authorization, that should be handled by the Base transport - using most likely the OAuth2
 // round tripper.
-func (t Transport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (c C) tryProxiedRequest(req *http.Request) (*http.Response, error) {
 	if req == nil {
 		return nil, errors.Newf("nil request")
 	}
-	proxyURL, err := t.ProxyURL.URL()
+	proxyURL, err := c.proxyURL.URL()
 	if err != nil {
 		return nil, err
 	}
@@ -41,10 +34,7 @@ func (t Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		needsProxying = false
 	}
 
-	if t.Base == nil {
-		t.Base = http.DefaultTransport
-	}
-	res, err := t.Base.RoundTrip(req)
+	res, err := c.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +44,7 @@ func (t Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	req1 := buildProxyRequest(req, proxyURL)
-	return t.Base.RoundTrip(req1)
+	return c.Do(req1)
 }
 
 func setProxyFetchID(req *http.Request, id string) error {
@@ -69,47 +59,6 @@ func setProxyFetchID(req *http.Request, id string) error {
 	req.Body = io.NopCloser(&body)
 	req.ContentLength = int64(body.Len())
 	return nil
-}
-
-type OptionFn func(transport *Transport) error
-
-func WithTransport(tr http.RoundTripper) OptionFn {
-	return func(h *Transport) error {
-		h.Base = tr
-		return nil
-	}
-}
-
-func WithProxyURL(proxyURL vocab.IRI) OptionFn {
-	return func(h *Transport) error {
-		if !vocab.EmptyIRI.Equal(proxyURL) {
-			h.ProxyURL = proxyURL
-		}
-		return nil
-	}
-}
-
-func WithActor(act *vocab.Actor) OptionFn {
-	return func(h *Transport) error {
-		if act != nil && act.Endpoints != nil && !vocab.EmptyIRI.Equal(act.Endpoints.ProxyURL) {
-			h.ProxyURL = act.Endpoints.ProxyURL
-		}
-		return nil
-	}
-}
-
-var _ http.RoundTripper = new(Transport)
-
-func New(initFns ...OptionFn) http.RoundTripper {
-	h := new(Transport)
-
-	for _, fn := range initFns {
-		_ = fn(h)
-	}
-	if vocab.EmptyIRI.Equal(h.ProxyURL) {
-		return h.Base
-	}
-	return h
 }
 
 // buildProxyRequest returns a clone of the provided *http.Request.
@@ -130,7 +79,6 @@ func buildProxyRequest(r *http.Request, proxyUrl *url.URL) *http.Request {
 	r2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	r2.URL = proxyUrl
 	r2.Host = proxyUrl.Host
-	r2.RequestURI = proxyUrl.String()
 	_ = setProxyFetchID(r2, r.URL.String())
 	return r2
 }
