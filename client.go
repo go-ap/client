@@ -33,6 +33,19 @@ type Basic interface {
 	CtxToCollection(context.Context, vocab.Item, ...vocab.IRI) (vocab.IRI, vocab.Item, error)
 }
 
+// NOTE(marius): these are exported to allow calling code to use them.
+const (
+	ContentTypeJsonLD = jsonld.ContentType
+
+	// ContentTypeJsonActivity This specification registers the application/activity+json MIME Media Type
+	// specifically for identifying documents conforming to the Activity Streams 2.0 format.
+	//
+	// https://www.w3.org/TR/activitystreams-core/#media-type
+	ContentTypeJsonActivity = requests.ContentTypeJsonActivity
+
+	ContentTypeJson = "application/json;q=0.9"
+)
+
 // UserAgent value that the client uses when performing requests
 var UserAgent = "GoAP-Client (+https://github.com/go-ap)"
 
