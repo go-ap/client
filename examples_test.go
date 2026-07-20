@@ -131,12 +131,12 @@ func ExampleNew_with_c2s_authorization() {
 	// The OAuth2 authorization flow is a little too complex to recreate
 	// here in a similar way we did with the HTTP-Signature authorization
 	// Actor in the S2S example.
-	tok := oauth2.Token{
+	tok := &oauth2.Token{
 		AccessToken: "S3CR3TC0D3",
 		TokenType:   "Bearer",
 	}
 
-	fetch := New(WithHTTPClient(srv.Client()), WithAuthorizationFn(c2s.BearerSigner(tok).Sign))
+	fetch := New(WithHTTPClient(srv.Client()), WithAuthorizationFn((*c2s.BearerSigner)(tok).Sign))
 	actor, err := fetch.Actor(context.Background(), "http://example.com/~jdoe")
 	if err != nil {
 		panic(err)

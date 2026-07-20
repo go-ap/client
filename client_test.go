@@ -312,8 +312,8 @@ func TestWithAuthorizationFn(t *testing.T) {
 		},
 		{
 			name: "C2S Sign Fn",
-			args: []func(*http.Request) error{c2s.BearerSigner(oauth2.Token{AccessToken: "t", TokenType: "B"}).Sign},
-			want: []func(*http.Request) error{c2s.BearerSigner(oauth2.Token{AccessToken: "t", TokenType: "B"}).Sign},
+			args: []func(*http.Request) error{(*c2s.BearerSigner)(&oauth2.Token{AccessToken: "t", TokenType: "B"}).Sign},
+			want: []func(*http.Request) error{(*c2s.BearerSigner)(&oauth2.Token{AccessToken: "t", TokenType: "B"}).Sign},
 		},
 	}
 	for _, tt := range tests {
