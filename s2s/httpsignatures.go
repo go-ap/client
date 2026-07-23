@@ -31,6 +31,15 @@ type Signer struct {
 	Alg   KeyEncoding
 	Key   crypto.PrivateKey
 	Actor *vocab.Actor
+
+	lFn func(string, ...any)
+}
+
+func (s *Signer) logFn(f string, p ...any) {
+	if s.lFn == nil {
+		return
+	}
+	s.lFn(f, p...)
 }
 
 type OptionFn func(transport *Signer)
@@ -44,6 +53,12 @@ func WithNonce(nonceFn func() (string, error)) OptionFn {
 func WithCoveredComponents(comp ...string) OptionFn {
 	return func(h *Signer) {
 		h.coveredComponents = comp
+	}
+}
+
+func WithLogFn(fn func(string, ...any)) OptionFn {
+	return func(h *Signer) {
+		h.lFn = fn
 	}
 }
 
@@ -164,6 +179,7 @@ func (s *Signer) signRequestRFC(coveredComponents []string) func(req *http.Reque
 		if s.Key == nil {
 			return errors.Newf("unable to sign request, private key is invalid")
 		}
+		s.logFn("Signing request: %s", s.Actor.ID)
 
 		pubKey, err := toCryptoPublicKey(s.Actor.PublicKey)
 		if err != nil {
@@ -278,6 +294,7 @@ func (s *Signer) signRequestDraft(req *http.Request) error {
 	if !s.Actor.PublicKey.ID.IsValid() {
 		return errors.Newf("unable to sign request, invalid Actor public key ID")
 	}
+	s.logFn("Signing request: %s", s.Actor.ID)
 
 	keyID := s.Actor.PublicKey.ID
 
