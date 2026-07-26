@@ -179,7 +179,7 @@ func (s *Signer) signRequestRFC(coveredComponents []string) func(req *http.Reque
 		if s.Key == nil {
 			return errors.Newf("unable to sign request, private key is invalid")
 		}
-		s.logFn("Signing request: %s", s.Actor.ID)
+		s.logFn("Signing RFC request")
 
 		pubKey, err := toCryptoPublicKey(s.Actor.PublicKey)
 		if err != nil {
@@ -294,7 +294,7 @@ func (s *Signer) signRequestDraft(req *http.Request) error {
 	if !s.Actor.PublicKey.ID.IsValid() {
 		return errors.Newf("unable to sign request, invalid Actor public key ID")
 	}
-	s.logFn("Signing request: %s", s.Actor.ID)
+	s.logFn("Signing draft request")
 
 	keyID := s.Actor.PublicKey.ID
 

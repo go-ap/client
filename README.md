@@ -11,9 +11,11 @@ It can be used to create an API client for ActivityPub servers.
 
 It supports retrieval of ActivityPub objects and collections, but also submitting Activities to servers, either as a [C2S](https://www.w3.org/TR/activitypub/#client-to-server-interactions) or as a [S2S](https://www.w3.org/TR/activitypub/#server-to-server-interactions) client.
 
-It can supports plugging in custom authorization logic. We usually authorize the requests with either HTTP Singatures (for server to server interactions) or OAuth2 (for client to server interactions).
+It can support plugging in custom authorization logic.
+The module already includes authorization mechanisms for either HTTP Singatures (for server to server interactions) or OAuth2 (for client to server interactions).
 
-You can find an expanded documentation about the whole library [on SourceHut](https://man.sr.ht/~mariusor/go-activitypub/go-ap/index.md).
+<!-- Expanded [documentation](https://man.sr.ht/~mariusor/go-activitypub/lib/index.md) -->
+For more details you can have a look at [the expanded documentation](https://go-activitypub.federated.id/lib).
 
 For discussions about the projects you can write to the discussions mailing list: [~mariusor/go-activitypub-discuss@lists.sr.ht](mailto:~mariusor/go-activitypub-discuss@lists.sr.ht)
 
