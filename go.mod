@@ -9,7 +9,7 @@ require (
 	github.com/dadrus/httpsig v0.9.0
 	github.com/go-ap/activitypub v0.0.0-20260730100035-a64b9d392262
 	github.com/go-ap/errors v0.0.0-20260701132509-92e5e4fd6394
-	github.com/go-ap/filters v0.0.0-20260730101216-bf79ffcc0f82
+	github.com/go-ap/filters v0.0.0-20260802100929-58943c65046d
 	github.com/go-ap/jsonld v0.0.0-20260607140920-737b40e0ca38
 	github.com/go-fed/httpsig v1.1.0
 	github.com/google/go-cmp v0.7.0
