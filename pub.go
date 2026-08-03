@@ -291,7 +291,7 @@ func validateActor(a vocab.Item) error {
 	if vocab.IsNil(a) {
 		return errors.Errorf("item is nil")
 	}
-	if a.IsObject() && !vocab.ActorTypes.Match(a.GetType()) {
+	if !vocab.IsIRI(a) && !vocab.ActorTypes.Match(a.GetType()) {
 		return errors.Errorf("invalid Actor type %v", a.GetType())
 	}
 	return nil
@@ -301,7 +301,7 @@ func validateObject(it vocab.Item) error {
 	if vocab.IsNil(it) {
 		return errors.Errorf("item is nil")
 	}
-	if it.IsObject() && !vocab.ObjectTypes.Match(it.GetType()) {
+	if !vocab.IsIRI(it) && !vocab.ObjectTypes.Match(it.GetType()) {
 		return errors.Errorf("invalid Object type %v", it.GetType())
 	}
 	return nil
