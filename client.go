@@ -380,7 +380,9 @@ func (c C) toCollections(ctx context.Context, act vocab.Item, colIRI ...vocab.IR
 		if !vocab.IsNil(it) {
 			result = append(result, it)
 		}
-		actIRIs = append(actIRIs, actIRI)
+		if !actIRI.Equal("") {
+			actIRIs = append(actIRIs, actIRI)
+		}
 	}
 
 	var it vocab.Item
