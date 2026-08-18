@@ -378,10 +378,10 @@ func (c C) toCollections(ctx context.Context, act vocab.Item, colIRI ...vocab.IR
 			return "", result, err
 		}
 		if !vocab.IsNil(it) {
-			result = append(result, it)
+			_ = result.Append(it)
 		}
 		if !actIRI.Equal("") {
-			actIRIs = append(actIRIs, actIRI)
+			_ = actIRIs.Append(actIRI)
 		}
 	}
 
@@ -389,7 +389,7 @@ func (c C) toCollections(ctx context.Context, act vocab.Item, colIRI ...vocab.IR
 	var iri vocab.IRI
 
 	// NOTE(marius): currently I don't know how to return multiple IRIs if we have multiple actors,
-	// so we currently do the wrong thing for len(iris) > 1 and return only the IRI of the first activity.
+	//  so we currently do the wrong thing for len(iris) > 1 and return only the IRI of the first activity.
 	if len(actIRIs) >= 1 {
 		iri = actIRIs[0]
 	}
