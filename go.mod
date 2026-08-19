@@ -7,9 +7,9 @@ require (
 	git.sr.ht/~mariusor/lw v0.0.0-20260818081520-a466820a662e
 	github.com/carlmjohnson/requests v0.25.1
 	github.com/dadrus/httpsig v0.9.0
-	github.com/go-ap/activitypub v0.0.0-20260818122150-b42413653fd1
+	github.com/go-ap/activitypub v0.0.0-20260819152015-c3df165dcded
 	github.com/go-ap/errors v0.0.0-20260701132509-92e5e4fd6394
-	github.com/go-ap/filters v0.0.0-20260818122801-1a4de1645061
+	github.com/go-ap/filters v0.0.0-20260819154911-65176da3bd4a
 	github.com/go-ap/jsonld v0.0.0-20260607140920-737b40e0ca38
 	github.com/go-fed/httpsig v1.1.0
 	github.com/google/go-cmp v0.7.0
