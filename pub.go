@@ -164,8 +164,10 @@ func ActivityActorTargetCollections(act vocab.Item, colFn iriGenFn) (vocab.IRIs,
 			if actors, err := vocab.ToItemCollection(a.Actor); err == nil {
 				a.Actor = actors.IRIs()
 			}
-		case !vocab.IsIRI(a.Actor):
+		case vocab.IsObject(a.Actor):
 			a.Actor = a.Actor.GetLink()
+		case vocab.IsNil(a.Actor):
+			return errors.Newf("invalid activity Actor: %v", a.Actor)
 		}
 		return err
 	})
