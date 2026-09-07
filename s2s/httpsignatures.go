@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"slices"
 
+	"git.sr.ht/~mariusor/lw"
 	rfc "github.com/dadrus/httpsig"
 	vocab "github.com/go-ap/activitypub"
 	"github.com/go-ap/errors"
@@ -32,14 +33,14 @@ type Signer struct {
 	Key   crypto.PrivateKey
 	Actor *vocab.Actor
 
-	lFn func(string, ...any)
+	l lw.Logger
 }
 
 func (s *Signer) logFn(f string, p ...any) {
-	if s.lFn == nil {
+	if s.l != nil {
+		s.l.Infof(f, p...)
 		return
 	}
-	s.lFn(f, p...)
 }
 
 type OptionFn func(transport *Signer)
@@ -56,9 +57,9 @@ func WithCoveredComponents(comp ...string) OptionFn {
 	}
 }
 
-func WithLogFn(fn func(string, ...any)) OptionFn {
+func WithLogger(l lw.Logger) OptionFn {
 	return func(h *Signer) {
-		h.lFn = fn
+		h.l = l
 	}
 }
 
@@ -85,6 +86,7 @@ func WithApplicationTag(t string) OptionFn {
 // that might come from the initialization functions.
 func New(initFns ...OptionFn) *Signer {
 	h := new(Signer)
+	h.l = lw.Nil()
 	for _, fn := range initFns {
 		fn(h)
 	}
@@ -222,6 +224,7 @@ func (s *Signer) signRequestRFC(coveredComponents []string) func(req *http.Reque
 		//if msg.URL.Fragment != "" {
 		//	req.URL.Fragment = ""
 		//}
+		s.l.WithContext(lw.Ctx{"headers": msg.Header, "authority": msg.Authority, "url": msg.URL.String(), "err": err}).Infof("sign msg")
 		postSignHeaders, err := signer.Sign(msg)
 		if err != nil {
 			return err
