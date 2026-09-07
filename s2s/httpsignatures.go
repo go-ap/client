@@ -204,7 +204,7 @@ func (s *Signer) signRequestRFC(coveredComponents []string) func(req *http.Reque
 		if s.Key == nil {
 			return errors.Newf("unable to sign request, private key is invalid")
 		}
-		s.logFn("Signing RFC request")
+		s.l.Tracef("Signing RFC request")
 
 		pubKey, err := toCryptoPublicKey(s.Actor.PublicKey)
 		if err != nil {
@@ -228,11 +228,12 @@ func (s *Signer) signRequestRFC(coveredComponents []string) func(req *http.Reque
 			initFns = append(initFns, rfc.WithTag(s.tag))
 		}
 
+		if req.Method == http.MethodPost {
+			coveredComponents = append(coveredComponents, "content-digest")
+			initFns = append(initFns, rfc.WithContentDigestAlgorithm(rfc.Sha256))
+		}
 		if coveredComponents != nil {
 			initFns = append(initFns, rfc.WithComponents(coveredComponents...))
-		}
-		if req.Method == http.MethodPost {
-			initFns = append(initFns, rfc.WithContentDigestAlgorithm(rfc.Sha256))
 		}
 		if s.nonceFn != nil {
 			initFns = append(initFns, rfc.WithNonce(s.nonceFn))
@@ -242,12 +243,17 @@ func (s *Signer) signRequestRFC(coveredComponents []string) func(req *http.Reque
 			return err
 		}
 		msg := HTTPSigMsgFromRequest(req)
-		s.l.WithContext(lw.Ctx{"headers": msg.Header, "authority": msg.Authority, "url": msg.URL.String(), "err": err}).Infof("sign msg")
-		postSignHeaders, err := signer.Sign(msg)
+		if sigDebug, ok := signer.(interface {
+			SignatureBase(*rfc.Message) ([]byte, error)
+		}); ok {
+			base, err := sigDebug.SignatureBase(msg)
+			s.l.WithContext(lw.Ctx{"sig-base": string(base), "err": err}).Debugf("signature base")
+		}
+		headersWithSignature, err := signer.Sign(msg)
 		if err != nil {
 			return err
 		}
-		req.Header = postSignHeaders
+		req.Header = headersWithSignature
 		return nil
 	}
 }

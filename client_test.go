@@ -239,8 +239,8 @@ func TestWithLogger(t *testing.T) {
 			cl := new(C)
 
 			WithLogger(tt.l)(cl)
-			if !cmp.Equal(cl.l, tt.l) {
-				t.Errorf("WithLogger() = %s", cmp.Diff(tt.l, cl.l))
+			if !reflect.DeepEqual(cl.l, tt.l) {
+				t.Errorf("WithLogger() = %+#v, expected %+#v", cl.l, tt.l)
 			}
 		})
 	}
