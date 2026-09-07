@@ -173,6 +173,29 @@ func rfcAlgorithmFromPrivateKey(key crypto.PrivateKey, typ KeyEncoding) rfc.Sign
 	return alg
 }
 
+func HTTPSigMsgFromRequest(req *http.Request) *rfc.Message {
+	msg := rfc.MessageFromRequest(req)
+	// NOTE(marius): on incoming requests the req.URL.Host is empty,
+	//  but to match the signature base it needs to be completed with the authority
+	if msg.URL.Host == "" {
+		msg.URL.Host = msg.Authority
+	}
+	// NOTE(marius): similarly if the protocol is empty we either hardcoded to https,
+	//  or we load it from the X-Forwarded-Proto if we're behind proxy.
+	if msg.URL.Scheme == "" {
+		msg.URL.Scheme = "https"
+		if proto := msg.Header.Get("X-Forwarded-Proto"); proto != "" {
+			msg.URL.Scheme = proto
+		}
+	}
+	// NOTE(marius): for some fetch requests, we have a non empty fragment
+	//  I'm not clear if this case is handled correctly on the verifier side.
+	if msg.URL.Fragment != "" {
+		req.URL.Fragment = ""
+	}
+	return msg
+}
+
 func (s *Signer) signRequestRFC(coveredComponents []string) func(req *http.Request) error {
 	return func(req *http.Request) error {
 		if s.Actor == nil {
@@ -218,12 +241,7 @@ func (s *Signer) signRequestRFC(coveredComponents []string) func(req *http.Reque
 		if err != nil {
 			return err
 		}
-		msg := rfc.MessageFromRequest(req)
-		// NOTE(marius): for some fetch requests, we have a non empty fragment
-		// I'm not clear if this case is handled correctly on the verifier side.
-		//if msg.URL.Fragment != "" {
-		//	req.URL.Fragment = ""
-		//}
+		msg := HTTPSigMsgFromRequest(req)
 		s.l.WithContext(lw.Ctx{"headers": msg.Header, "authority": msg.Authority, "url": msg.URL.String(), "err": err}).Infof("sign msg")
 		postSignHeaders, err := signer.Sign(msg)
 		if err != nil {
@@ -326,7 +344,7 @@ func (s *Signer) SignRFC9421(req *http.Request) error {
 	coveredComponents := s.coveredComponents
 	if coveredComponents == nil {
 		// NOTE(marius): ideally the caller knows if we're about to sign a Fetch or not,
-		// and provide all necessary covered components at initialization time.
+		//  and provide all necessary covered components at initialization time.
 		coveredComponents = FetchCoveredComponents
 		if !slices.Contains([]string{http.MethodGet, http.MethodHead}, req.Method) {
 			coveredComponents = append(coveredComponents, AdditionalPostCoveredComponents...)
