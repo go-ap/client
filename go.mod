@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	git.sr.ht/~mariusor/cache v0.0.0-20260516133819-5427e9c3067b
-	git.sr.ht/~mariusor/lw v0.0.0-20260907185541-6787b791ed81
+	git.sr.ht/~mariusor/lw v0.0.0-20260908083741-41f1f9c38f78
 	github.com/carlmjohnson/requests v0.26.1
 	github.com/dadrus/httpsig v0.9.0
 	github.com/go-ap/activitypub v0.0.0-20260831124014-72a94f5a8a10

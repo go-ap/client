@@ -243,12 +243,6 @@ func (s *Signer) signRequestRFC(coveredComponents []string) func(req *http.Reque
 			return err
 		}
 		msg := HTTPSigMsgFromRequest(req)
-		if sigDebug, ok := signer.(interface {
-			SignatureBase(*rfc.Message) ([]byte, error)
-		}); ok {
-			base, err := sigDebug.SignatureBase(msg)
-			s.l.WithContext(lw.Ctx{"sig-base": string(base), "err": err}).Debugf("signature base")
-		}
 		headersWithSignature, err := signer.Sign(msg)
 		if err != nil {
 			return err
