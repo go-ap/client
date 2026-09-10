@@ -36,13 +36,6 @@ type Signer struct {
 	l lw.Logger
 }
 
-func (s *Signer) logFn(f string, p ...any) {
-	if s.l != nil {
-		s.l.Infof(f, p...)
-		return
-	}
-}
-
 type OptionFn func(transport *Signer)
 
 func WithNonce(nonceFn func() (string, error)) OptionFn {
@@ -240,11 +233,13 @@ func (s *Signer) signRequestRFC(coveredComponents []string) func(req *http.Reque
 		}
 		signer, err := rfc.NewSigner(key, initFns...)
 		if err != nil {
+			s.l.WithContext(lw.Ctx{"err": err}).Warnf("RFC signer initialization failed")
 			return err
 		}
 		msg := HTTPSigMsgFromRequest(req)
 		headersWithSignature, err := signer.Sign(msg)
 		if err != nil {
+			s.l.WithContext(lw.Ctx{"err": err}).Warnf("RFC signature failed")
 			return err
 		}
 		req.Header = headersWithSignature
@@ -315,7 +310,7 @@ func (s *Signer) signRequestDraft(req *http.Request) error {
 	if !s.Actor.PublicKey.ID.IsValid() {
 		return errors.Newf("unable to sign request, invalid Actor public key ID")
 	}
-	s.logFn("Signing draft request")
+	s.l.Tracef("Signing draft request")
 
 	keyID := s.Actor.PublicKey.ID
 
@@ -335,6 +330,7 @@ func (s *Signer) signRequestDraft(req *http.Request) error {
 	// NOTE(marius): The only http-signatures accepted by Mastodon instances is "Signature", not "Authorization"
 	sig, _, err := draft.NewSigner([]draft.Algorithm{algo}, draft.DigestSha256, headers, draft.Signature, secToExpiration)
 	if err != nil {
+		s.l.WithContext(lw.Ctx{"err": err}).Warnf("Draft signature failed")
 		return err
 	}
 	return sig.SignRequest(s.Key, string(keyID), req, bodyBuf.Bytes())
