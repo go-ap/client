@@ -675,7 +675,7 @@ func mockActor(base vocab.IRI, name string) *vocab.Actor {
 	id := base.AddPath("~" + name)
 	return &vocab.Actor{
 		ID:                base,
-		PreferredUsername: vocab.DefaultNaturalLanguage(name),
+		PreferredUsername: vocab.DefaultLangValue(name),
 		Type:              vocab.PersonType,
 		Outbox:            vocab.Outbox.IRI(id),
 		Inbox:             vocab.Inbox.IRI(id),
@@ -699,18 +699,18 @@ func mockCollection(name string, c vocab.CollectionPath) vocab.CollectionInterfa
 			Object: &vocab.Object{
 				ID:      "http://example.com/note-1",
 				Type:    vocab.NoteType,
-				Content: vocab.DefaultNaturalLanguage("Answer #1"),
+				Content: vocab.DefaultLangValue("Answer #1"),
 			},
 		},
 		&vocab.Question{
 			ID:      "http://example.com/2",
 			Type:    vocab.QuestionType,
-			Content: vocab.DefaultNaturalLanguage("question ?"),
+			Content: vocab.DefaultLangValue("question ?"),
 			OneOf: vocab.ItemCollection{
 				vocab.IRI("http://example.com/note-1"),
 				&vocab.Object{
 					Type:    vocab.NoteType,
-					Content: vocab.DefaultNaturalLanguage("Answer #2"),
+					Content: vocab.DefaultLangValue("Answer #2"),
 				},
 			},
 		},
@@ -722,12 +722,12 @@ func mockCollection(name string, c vocab.CollectionPath) vocab.CollectionInterfa
 	objects := vocab.ItemCollection{
 		&vocab.Object{
 			Type:    vocab.NoteType,
-			Content: vocab.DefaultNaturalLanguage("Answer #2"),
+			Content: vocab.DefaultLangValue("Answer #2"),
 		},
 		&vocab.Object{
 			ID:      "http://example.com/note-1",
 			Type:    vocab.NoteType,
-			Content: vocab.DefaultNaturalLanguage("Answer #1"),
+			Content: vocab.DefaultLangValue("Answer #1"),
 		},
 	}
 
