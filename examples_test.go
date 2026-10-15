@@ -5,15 +5,13 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 
 	"github.com/dadrus/httpsig"
-	vocab "github.com/go-ap/activitypub"
+	"github.com/go-ap/activitypub/build"
 	"github.com/go-ap/client/c2s"
 	"github.com/go-ap/client/internal/requests"
 	"github.com/go-ap/client/s2s"
@@ -33,7 +31,6 @@ func (k kresolver) ResolveKey(_ context.Context, keyID string) (httpsig.Key, err
 
 func ExampleNew_with_s2s_authorization() {
 	var prv crypto.PrivateKey
-	var pubPem []byte
 
 	rsa, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -41,24 +38,10 @@ func ExampleNew_with_s2s_authorization() {
 	}
 	prv = rsa
 	pub := &rsa.PublicKey
-	pubEnc, err := x509.MarshalPKIXPublicKey(pub)
-	if err != nil {
-		panic(err)
-	}
-	pubPem = pem.EncodeToMemory(&pem.Block{
-		Type:  "PUBLIC KEY",
-		Bytes: pubEnc,
-	})
-
-	signActor := &vocab.Actor{
-		ID:   "http://example.com/~johndoe",
-		Type: vocab.PersonType,
-		PublicKey: vocab.PublicKey{
-			ID:           "http://example.com/~johndoe#main",
-			Owner:        "http://example.com/~johndoe",
-			PublicKeyPem: string(pubPem),
-		},
-	}
+	signActor := build.Person(
+		build.WithID("http://example.com/~johndoe"),
+		build.WithPublicKey(build.PublicKey("http://example.com/~johndoe#main", pub)),
+	)
 
 	vv, err := httpsig.NewVerifier(kresolver(*pub), httpsig.WithValidateAllSignatures())
 	if err != nil {
@@ -93,31 +76,15 @@ func ExampleNew_with_s2s_authorization() {
 }
 
 func ExampleNew_with_c2s_authorization() {
-	var pubPem []byte
-
 	rsa, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		panic(err)
 	}
 	pub := &rsa.PublicKey
-	pubEnc, err := x509.MarshalPKIXPublicKey(pub)
-	if err != nil {
-		panic(err)
-	}
-	pubPem = pem.EncodeToMemory(&pem.Block{
-		Type:  "PUBLIC KEY",
-		Bytes: pubEnc,
-	})
-
-	signActor := &vocab.Actor{
-		ID:   "http://example.com/~johndoe",
-		Type: vocab.PersonType,
-		PublicKey: vocab.PublicKey{
-			ID:           "http://example.com/~johndoe#main",
-			Owner:        "http://example.com/~johndoe",
-			PublicKeyPem: string(pubPem),
-		},
-	}
+	signActor := build.Person(
+		build.WithID("http://example.com/~johndoe"),
+		build.WithPublicKey(build.PublicKey("http://example.com/~johndoe#main", pub)),
+	)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("Authorization:   %v\n", r.Header.Get("Authorization"))

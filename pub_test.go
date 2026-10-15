@@ -9,6 +9,7 @@ import (
 
 	"git.sr.ht/~mariusor/lw"
 	vocab "github.com/go-ap/activitypub"
+	"github.com/go-ap/activitypub/build"
 	"github.com/go-ap/errors"
 	"github.com/go-ap/filters"
 	"github.com/google/go-cmp/cmp"
@@ -673,62 +674,42 @@ func TestC_Inbox(t *testing.T) {
 
 func mockActor(base vocab.IRI, name string) *vocab.Actor {
 	id := base.AddPath("~" + name)
-	return &vocab.Actor{
-		ID:                base,
-		PreferredUsername: vocab.DefaultLangValue(name),
-		Type:              vocab.PersonType,
-		Outbox:            vocab.Outbox.IRI(id),
-		Inbox:             vocab.Inbox.IRI(id),
-		Followers:         vocab.Followers.IRI(id),
-		Following:         vocab.Following.IRI(id),
-		Shares:            vocab.Shares.IRI(id),
-		Liked:             vocab.Liked.IRI(id),
-		Likes:             vocab.Likes.IRI(id),
-		Replies:           vocab.Replies.IRI(id),
-	}
+	return build.Person(
+		build.WithID(id),
+		build.WithPreferredUsername(name),
+		build.WithInbox(), build.WithOutbox(),
+		build.WithFollowers(), build.WithFollowing(),
+		build.WithLikes(), build.WithLiked(),
+		build.WithShares(), build.WithReplies(),
+	)
 }
 
 func mockCollection(name string, c vocab.CollectionPath) vocab.CollectionInterface {
 	actor := vocab.IRI("http://example.com/").AddPath("~" + name)
 	var items vocab.ItemCollection
 	activities := vocab.ItemCollection{
-		&vocab.Activity{
-			ID:    "http://example.com/1",
-			Type:  vocab.CreateType,
-			Actor: actor,
-			Object: &vocab.Object{
-				ID:      "http://example.com/note-1",
-				Type:    vocab.NoteType,
-				Content: vocab.DefaultLangValue("Answer #1"),
-			},
-		},
-		&vocab.Question{
-			ID:      "http://example.com/2",
-			Type:    vocab.QuestionType,
-			Content: vocab.DefaultLangValue("question ?"),
-			OneOf: vocab.ItemCollection{
+		build.Create(
+			build.WithID("http://example.com/1"),
+			build.WithActor(actor),
+			build.WithObject(build.Note(build.WithID("http://example.com/note-1"), build.WithContent("Answer #1"))),
+		),
+		build.Question(
+			build.WithID("http://example.com/2"),
+			build.WithContent("question ?"),
+			build.WithOneOf(
 				vocab.IRI("http://example.com/note-1"),
-				&vocab.Object{
-					Type:    vocab.NoteType,
-					Content: vocab.DefaultLangValue("Answer #2"),
-				},
-			},
-		},
+				build.Note(build.WithContent("Answer #2")),
+			),
+		),
 	}
+
 	actors := vocab.ItemCollection{
 		&vocab.Actor{ID: "http://example.com/~alice"},
 		&vocab.Actor{ID: "http://example.com/~jane"},
 	}
 	objects := vocab.ItemCollection{
-		&vocab.Object{
-			Type:    vocab.NoteType,
-			Content: vocab.DefaultLangValue("Answer #2"),
-		},
-		&vocab.Object{
-			ID:      "http://example.com/note-1",
-			Type:    vocab.NoteType,
-			Content: vocab.DefaultLangValue("Answer #1"),
-		},
+		build.Note(build.WithContent("Answer #2")),
+		build.Note(build.WithID("http://example.com/note-1"), build.WithContent("Answer #1")),
 	}
 
 	switch c {
@@ -1243,14 +1224,12 @@ func TestC_Object(t *testing.T) {
 	}
 }
 func mockObject() *vocab.Object {
-	id := vocab.IRI("http://example.com/").AddPath("1")
-	return &vocab.Object{
-		ID:      id,
-		Type:    vocab.NoteType,
-		Shares:  vocab.Shares.IRI(id),
-		Likes:   vocab.Likes.IRI(id),
-		Replies: vocab.Replies.IRI(id),
-	}
+	return build.Note(
+		build.WithID(vocab.IRI("http://example.com/").AddPath("1")),
+		build.WithShares(),
+		build.WithLikes(),
+		build.WithReplies(),
+	)
 }
 
 func TestC_Activity(t *testing.T) {
@@ -1321,12 +1300,10 @@ func FirstOr(it ...vocab.Item) vocab.Item {
 }
 
 func mockActivity(a ...vocab.Item) *vocab.Activity {
-	id := vocab.IRI("http://example.com/").AddPath("666")
-	act := &vocab.Activity{
-		ID:   id,
-		Type: vocab.FollowType,
-	}
-	act.Actor = FirstOr(a...)
+	act := build.Follow(
+		build.WithID(vocab.IRI("http://example.com/").AddPath("666")),
+		build.WithActor(a...),
+	)
 	return act
 }
 

@@ -21,6 +21,7 @@ import (
 	"git.sr.ht/~mariusor/lw"
 	"github.com/carlmjohnson/requests"
 	vocab "github.com/go-ap/activitypub"
+	"github.com/go-ap/activitypub/build"
 	"github.com/go-ap/client/c2s"
 	"github.com/go-ap/client/debug"
 	"github.com/go-ap/client/s2s"
@@ -522,7 +523,7 @@ func TestC_toCollection(t *testing.T) {
 				_, _ = w.Write(raw)
 			},
 			wantIRI: "http://example.com/666",
-			wantIt:  &vocab.Object{ID: "http://example.com/note-1", Type: vocab.NoteType},
+			wantIt:  build.Note(build.WithID("http://example.com/note-1")),
 			wantErr: nil,
 		},
 		{
