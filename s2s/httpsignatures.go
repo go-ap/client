@@ -2,7 +2,6 @@ package s2s
 
 import (
 	"bytes"
-	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -29,7 +28,6 @@ type Signer struct {
 	// See: https://www.rfc-editor.org/rfc/rfc9421.html#section-2.3-4.12
 	tag string
 
-	Alg   KeyEncoding
 	Key   crypto.PrivateKey
 	Actor *vocab.Actor
 
@@ -38,7 +36,7 @@ type Signer struct {
 
 type OptionFn func(transport *Signer)
 
-func WithNonce(nonceFn func() (string, error)) OptionFn {
+func WithNonce(nonceFn func() string) OptionFn {
 	return func(h *Signer) {
 		h.nonceFn = nonceFn
 	}
@@ -53,12 +51,6 @@ func WithCoveredComponents(comp ...string) OptionFn {
 func WithLogger(l lw.Logger) OptionFn {
 	return func(h *Signer) {
 		h.l = l
-	}
-}
-
-func WithAlg(alg KeyEncoding) OptionFn {
-	return func(h *Signer) {
-		h.Alg = alg
 	}
 }
 
@@ -86,11 +78,7 @@ func New(initFns ...OptionFn) *Signer {
 	return h
 }
 
-type noncer func() (string, error)
-
-func (n noncer) GetNonce(_ context.Context) (string, error) {
-	return n()
-}
+type noncer func() string
 
 func validateActorPublicKey(key crypto.PrivateKey, actorPubKey crypto.PublicKey) error {
 	switch pk := key.(type) {
@@ -113,57 +101,35 @@ func validateActorPublicKey(key crypto.PrivateKey, actorPubKey crypto.PublicKey)
 	return nil
 }
 
-func rfcAlgorithmFromPrivateKey(key crypto.PrivateKey, typ KeyEncoding) rfc.SignatureAlgorithm {
+func rfcAlgorithmFromPrivateKey(key crypto.PrivateKey) rfc.SignatureAlgorithm {
 	// NOTE(marius): I'm not sure what purpose it serves to validate the public key of the actor
 	// against the private key
-	var alg rfc.SignatureAlgorithm = ""
-
 	switch pk := key.(type) {
 	case *rsa.PrivateKey:
 		switch pk.Size() {
 		case 128, 256:
-			switch typ {
-			case KeyTypePSS:
-				alg = rfc.RsaPssSha256
-			case KeyTypePKCS:
-				fallthrough
-			default:
-				alg = rfc.RsaPkcs1v15Sha256
-			}
+			return rfc.RsaPkcs1v15Sha256
 		case 384:
-			switch typ {
-			case KeyTypePSS:
-				alg = rfc.RsaPssSha384
-			case KeyTypePKCS:
-				fallthrough
-			default:
-				alg = rfc.RsaPkcs1v15Sha384
-			}
+			return rfc.RsaPkcs1v15Sha384
 		case 512:
-			switch typ {
-			case KeyTypePSS:
-				alg = rfc.RsaPssSha512
-			case KeyTypePKCS:
-				fallthrough
-			default:
-				alg = rfc.RsaPkcs1v15Sha512
-			}
+			return rfc.RsaPkcs1v15Sha512
 		}
 	case *ecdsa.PrivateKey:
 		if p := pk.Params(); p != nil {
 			switch p.BitSize {
 			case 128, 256:
-				alg = rfc.EcdsaP256Sha256
+				return rfc.EcdsaP256Sha256
 			case 384:
-				alg = rfc.EcdsaP384Sha384
+				return rfc.EcdsaP384Sha384
 			case 512:
-				alg = rfc.EcdsaP521Sha512
+				return rfc.EcdsaP521Sha512
 			}
 		}
 	case ed25519.PrivateKey:
-		alg = rfc.Ed25519
+		return rfc.Ed25519
+	default:
 	}
-	return alg
+	return "unknown"
 }
 
 func HTTPSigMsgFromRequest(req *http.Request) *rfc.Message {
@@ -208,12 +174,13 @@ func (s *Signer) signRequestRFC(coveredComponents []string) func(req *http.Reque
 		}
 
 		key := rfc.Key{
-			KeyID:     string(s.Actor.PublicKey.ID),
-			Algorithm: rfcAlgorithmFromPrivateKey(s.Key, s.Alg),
-			Key:       s.Key,
+			Algorithm: rfcAlgorithmFromPrivateKey(s.Key),
+			Material:  s.Key,
 		}
 
 		initFns := []rfc.SignerOption{
+			rfc.WithKeyID(string(s.Actor.PublicKey.ID)),
+			rfc.WithAlg(),
 			rfc.WithTTL(sigValidDuration),
 		}
 
@@ -228,16 +195,19 @@ func (s *Signer) signRequestRFC(coveredComponents []string) func(req *http.Reque
 		if coveredComponents != nil {
 			initFns = append(initFns, rfc.WithComponents(coveredComponents...))
 		}
-		if s.nonceFn != nil {
-			initFns = append(initFns, rfc.WithNonce(s.nonceFn))
-		}
 		signer, err := rfc.NewSigner(key, initFns...)
 		if err != nil {
 			s.l.WithContext(lw.Ctx{"err": err}).Warnf("RFC signer initialization failed")
 			return err
 		}
+		signFns := make([]rfc.SignOption, 0)
+		if s.nonceFn != nil {
+			if nonceVal := s.nonceFn(); nonceVal != "" {
+				signFns = append(signFns, rfc.WithParameter(rfc.Nonce, nonceVal))
+			}
+		}
 		msg := HTTPSigMsgFromRequest(req)
-		headersWithSignature, err := signer.Sign(msg)
+		headersWithSignature, err := signer.Sign(msg, signFns...)
 		if err != nil {
 			s.l.WithContext(lw.Ctx{"err": err}).Warnf("RFC signature failed")
 			return err
@@ -246,14 +216,6 @@ func (s *Signer) signRequestRFC(coveredComponents []string) func(req *http.Reque
 		return nil
 	}
 }
-
-type KeyEncoding int
-
-const (
-	KeyTypeUnknown KeyEncoding = 0
-	KeyTypePKCS    KeyEncoding = 1
-	KeyTypePSS     KeyEncoding = 2
-)
 
 func toCryptoPublicKey(key vocab.PublicKey) (crypto.PublicKey, error) {
 	pubBytes, _ := pem.Decode([]byte(key.PublicKeyPem))

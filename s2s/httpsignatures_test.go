@@ -317,7 +317,6 @@ func TestSigner_SignRFC9421(t *testing.T) {
 		nonceFn           noncer
 		coveredComponents []string
 		tag               string
-		Alg               KeyEncoding
 		Key               crypto.PrivateKey
 		Actor             *vocab.Actor
 	}
@@ -340,7 +339,6 @@ func TestSigner_SignRFC9421(t *testing.T) {
 				nonceFn:           tt.fields.nonceFn,
 				coveredComponents: tt.fields.coveredComponents,
 				tag:               tt.fields.tag,
-				Alg:               tt.fields.Alg,
 				Key:               tt.fields.Key,
 				Actor:             tt.fields.Actor,
 			}
@@ -356,7 +354,6 @@ func TestSigner_SignDraft(t *testing.T) {
 		nonceFn           noncer
 		coveredComponents []string
 		tag               string
-		Alg               KeyEncoding
 		Key               crypto.PrivateKey
 		Actor             *vocab.Actor
 	}
@@ -379,7 +376,6 @@ func TestSigner_SignDraft(t *testing.T) {
 				nonceFn:           tt.fields.nonceFn,
 				coveredComponents: tt.fields.coveredComponents,
 				tag:               tt.fields.tag,
-				Alg:               tt.fields.Alg,
 				Key:               tt.fields.Key,
 				Actor:             tt.fields.Actor,
 			}
@@ -412,24 +408,19 @@ func Test_draftAlgorithmFromPrivateKey(t *testing.T) {
 }
 
 func Test_rfcAlgorithmFromPrivateKey(t *testing.T) {
-	type args struct {
-		key crypto.PrivateKey
-		typ KeyEncoding
-	}
 	tests := []struct {
 		name string
-		args args
+		key  crypto.PrivateKey
 		want draft.SignatureAlgorithm
 	}{
 		{
 			name: "empty",
-			args: args{},
-			want: "",
+			want: "unknown",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := rfcAlgorithmFromPrivateKey(tt.args.key, tt.args.typ); got != tt.want {
+			if got := rfcAlgorithmFromPrivateKey(tt.key); got != tt.want {
 				t.Errorf("rfcAlgorithmFromPrivateKey() = %v, want %v", got, tt.want)
 			}
 		})

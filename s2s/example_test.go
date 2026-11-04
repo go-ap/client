@@ -144,38 +144,44 @@ func ExampleSigner_SignDraft() {
 	// Verify error: <nil>
 }
 
-func sameNonce(s string) func() (string, error) {
-	return func() (string, error) {
-		return s, nil
+func sameNonce(s string) func() string {
+	return func() string {
+		return s
 	}
 }
 
 type mockKeyResolver struct{}
 
-func (m mockKeyResolver) ResolveKey(_ context.Context, keyID string) (httpsig.Key, error) {
-	return httpsig.Key{KeyID: string(exActorRSA.PublicKey.ID), Algorithm: httpsig.RsaPkcs1v15Sha256, Key: pubKeyRSA}, nil
+func (m mockKeyResolver) ResolveKey(_ context.Context, sigInfo httpsig.SignatureInfo) (httpsig.KeyInfo, error) {
+	return httpsig.KeyInfo{
+		Key: httpsig.Key{
+			Algorithm: httpsig.RsaPkcs1v15Sha256,
+			Material:  pubKeyRSA,
+		},
+	}, nil
 }
 
 type mockNonceChecker bool
 
-func (n mockNonceChecker) CheckNonce(_ context.Context, _ httpsig.NonceValue) error {
+func (n mockNonceChecker) GetNonce(_ context.Context) (string, error) {
 	if n {
-		return nil
+		return "test", nil
 	}
-	return errors.Newf("seen nonce before")
+	return "", errors.Newf("seen nonce before")
 }
+
+var _ httpsig.NonceGetter = mockNonceChecker(false)
 
 func ExampleSigner_SignRFC9421() {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		verifier, _ := httpsig.NewVerifier(
 			mockKeyResolver{},
-			httpsig.WithNonceChecker(mockNonceChecker(true)),
 			httpsig.WithValidateAllSignatures(),
 			httpsig.WithValidityTolerance(time.Hour),
 			httpsig.WithMaxAge(time.Hour),
 		)
 
-		err := verifier.Verify(httpsig.MessageFromRequest(r))
+		_, err := verifier.Verify(httpsig.MessageFromRequest(r))
 		if err != nil {
 			fmt.Printf("Verification failed: %s\n", err)
 		} else {
@@ -185,7 +191,7 @@ func ExampleSigner_SignRFC9421() {
 	}))
 	defer srv.Close()
 
-	signer := New(WithActor(&exActorRSA, prvKeyRSA), WithAlg(KeyTypePKCS), WithNonce(sameNonce("test")))
+	signer := New(WithActor(&exActorRSA, prvKeyRSA), WithNonce(sameNonce("test")))
 	req := httptest.NewRequest(http.MethodPost, srv.URL, strings.NewReader(`{"hello": "world"}`))
 	req.Header.Set("Host", "example.com")
 	req.Header.Set("Date", millenium.Format(http.TimeFormat))
@@ -195,26 +201,29 @@ func ExampleSigner_SignRFC9421() {
 	_ = signer.SignRFC9421(req)
 	v, err := httpsig.NewVerifier(kresolver(*pubKeyRSA),
 		httpsig.WithValidateAllSignatures(),
-		httpsig.WithCreatedTimestampRequired(false),
-		httpsig.WithExpiredTimestampRequired(false),
+		httpsig.WithCreatedTimestamp(false),
+		httpsig.WithExpiresTimestamp(false),
 	)
 	if err != nil {
 		panic(err)
 	}
-	err = v.Verify(httpsig.MessageFromRequest(req))
+	vv, err := v.Verify(httpsig.MessageFromRequest(req))
+	fmt.Printf("Valid signature: %s\n", vv[0].Label)
 	fmt.Printf("Verification error: %v", err)
 
 	// Output:
+	// Valid signature: sig
 	// Verification error: <nil>
 }
 
 type kresolver rsa.PublicKey
 
-func (k kresolver) ResolveKey(_ context.Context, keyID string) (httpsig.Key, error) {
+func (k kresolver) ResolveKey(_ context.Context, sigInfo httpsig.SignatureInfo) (httpsig.KeyInfo, error) {
 	pk := rsa.PublicKey(k)
-	return httpsig.Key{
-		KeyID:     keyID,
-		Algorithm: httpsig.RsaPkcs1v15Sha256,
-		Key:       &pk,
+	return httpsig.KeyInfo{
+		Key: httpsig.Key{
+			Algorithm: httpsig.RsaPkcs1v15Sha256,
+			Material:  &pk,
+		},
 	}, nil
 }

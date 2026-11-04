@@ -20,12 +20,13 @@ import (
 
 type kresolver rsa.PublicKey
 
-func (k kresolver) ResolveKey(_ context.Context, keyID string) (httpsig.Key, error) {
+func (k kresolver) ResolveKey(_ context.Context, sigInfo httpsig.SignatureInfo) (httpsig.KeyInfo, error) {
 	pk := rsa.PublicKey(k)
-	return httpsig.Key{
-		KeyID:     keyID,
-		Algorithm: httpsig.RsaPkcs1v15Sha256,
-		Key:       &pk,
+	return httpsig.KeyInfo{
+		Key: httpsig.Key{
+			Algorithm: httpsig.RsaPkcs1v15Sha256,
+			Material:  &pk,
+		},
 	}, nil
 }
 
@@ -49,7 +50,7 @@ func ExampleNew_with_s2s_authorization() {
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		err := vv.Verify(httpsig.MessageFromRequest(r))
+		_, err = vv.Verify(httpsig.MessageFromRequest(r))
 		fmt.Printf("Verify error:    %v\n", err)
 
 		w.Header().Add("Content-Type", requests.ContentTypeJsonActivity)
