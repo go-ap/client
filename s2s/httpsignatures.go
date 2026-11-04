@@ -2,7 +2,6 @@ package s2s
 
 import (
 	"bytes"
-	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -38,7 +37,7 @@ type Signer struct {
 
 type OptionFn func(transport *Signer)
 
-func WithNonce(nonceFn func() (string, error)) OptionFn {
+func WithNonce(nonceFn func() string) OptionFn {
 	return func(h *Signer) {
 		h.nonceFn = nonceFn
 	}
@@ -86,11 +85,7 @@ func New(initFns ...OptionFn) *Signer {
 	return h
 }
 
-type noncer func() (string, error)
-
-func (n noncer) GetNonce(_ context.Context) (string, error) {
-	return n()
-}
+type noncer func() string
 
 func validateActorPublicKey(key crypto.PrivateKey, actorPubKey crypto.PublicKey) error {
 	switch pk := key.(type) {
@@ -208,12 +203,13 @@ func (s *Signer) signRequestRFC(coveredComponents []string) func(req *http.Reque
 		}
 
 		key := rfc.Key{
-			KeyID:     string(s.Actor.PublicKey.ID),
 			Algorithm: rfcAlgorithmFromPrivateKey(s.Key, s.Alg),
-			Key:       s.Key,
+			Material:  s.Key,
 		}
 
 		initFns := []rfc.SignerOption{
+			rfc.WithKeyID(string(s.Actor.PublicKey.ID)),
+			rfc.WithAlg(),
 			rfc.WithTTL(sigValidDuration),
 		}
 
@@ -229,7 +225,9 @@ func (s *Signer) signRequestRFC(coveredComponents []string) func(req *http.Reque
 			initFns = append(initFns, rfc.WithComponents(coveredComponents...))
 		}
 		if s.nonceFn != nil {
-			initFns = append(initFns, rfc.WithNonce(s.nonceFn))
+			if nonceVal := s.nonceFn(); nonceVal != "" {
+				initFns = append(initFns, rfc.WithParameter(rfc.Nonce, nonceVal))
+			}
 		}
 		signer, err := rfc.NewSigner(key, initFns...)
 		if err != nil {
