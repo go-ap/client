@@ -26,13 +26,6 @@ type RequestSignFn func(*http.Request) error
 type CtxLogFn func(...Ctx) LogFn
 type LogFn func(string, ...any)
 
-type Basic interface {
-	LoadIRI(vocab.IRI) (vocab.Item, error)
-	CtxLoadIRI(context.Context, vocab.IRI) (vocab.Item, error)
-	ToCollection(vocab.Item, ...vocab.IRI) (vocab.IRI, vocab.Item, error)
-	CtxToCollection(context.Context, vocab.Item, ...vocab.IRI) (vocab.IRI, vocab.Item, error)
-}
-
 // NOTE(marius): these are exported to allow calling code to use them.
 const (
 	ContentTypeJsonLD = jsonld.ContentType
