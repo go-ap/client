@@ -95,7 +95,7 @@ func ExampleNew_with_c2s_authorization() {
 		_ = json.NewEncoder(w).Encode(signActor)
 	}))
 
-	// Token obtained in some way from a server, the OAuth2.
+	// Token obtained in some way from a server.
 	// The OAuth2 authorization flow is a little too complex to recreate
 	// here in a similar way we did with the HTTP-Signature authorization
 	// Actor in the S2S example.
