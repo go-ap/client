@@ -14,9 +14,13 @@ It supports retrieval of ActivityPub objects and collections, but also submittin
 It can support plugging in custom authorization logic.
 The module already includes authorization mechanisms for either HTTP Singatures (for server to server interactions) or OAuth2 (for client to server interactions).
 
-<!-- Expanded [documentation](https://man.sr.ht/~mariusor/go-activitypub/lib/index.md) -->
-For more details you can have a look at [the expanded documentation](https://go-activitypub.federated.id/lib).
+## Extended documentation
+
+For more information about how the module works in the scope of the
+GoActivityPub library, see the [expanded
+documentation](https://go-activitypub.federated.id/lib/modules/index.html#client).
 
 For discussions about the projects you can write to the discussions mailing list: [~mariusor/go-activitypub-discuss@lists.sr.ht](mailto:~mariusor/go-activitypub-discuss@lists.sr.ht)
 
 For patches and bug reports please use the dev mailing list: [~mariusor/go-activitypub-dev@lists.sr.ht](mailto:~mariusor/go-activitypub-dev@lists.sr.ht)
+
