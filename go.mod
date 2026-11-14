@@ -1,19 +1,19 @@
 module github.com/go-ap/client
 
-go 1.26.9
+go 1.27
 
 require (
 	git.sr.ht/~mariusor/cache v0.0.0-20260911160635-3a397efbb885
 	git.sr.ht/~mariusor/lw v0.0.0-20260917101519-2e0b081e156c
-	github.com/carlmjohnson/requests v0.26.2
+	github.com/carlmjohnson/requests v0.26.3
 	github.com/dadrus/httpsig v0.10.0
-	github.com/go-ap/activitypub v0.0.0-20261107170531-73ce953a88f6
+	github.com/go-ap/activitypub v0.0.0-20261114094942-b164c2575fd9
 	github.com/go-ap/errors v0.0.0-20261107170344-5391268d9d2c
-	github.com/go-ap/filters v0.0.0-20261107170746-b873ae37c70e
+	github.com/go-ap/filters v0.0.0-20261114095223-5acde6d8785c
 	github.com/go-ap/jsonld v0.0.0-20261107170435-a7bb5ba3f894
 	github.com/go-fed/httpsig v1.1.0
 	github.com/google/go-cmp v0.7.0
-	golang.org/x/oauth2 v0.37.0
+	golang.org/x/oauth2 v0.38.0
 )
 
 require (
@@ -53,7 +53,7 @@ require (
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/term v0.47.0 // indirect
-	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/tools v0.52.0 // indirect
 	gopkg.in/neurosnap/sentences.v1 v1.0.7 // indirect
 	quamina.net/go/quamina/v2 v2.0.3 // indirect
