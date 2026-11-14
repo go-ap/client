@@ -131,7 +131,10 @@ func ExampleSigner_SignDraft() {
 	host = host[:strings.Index(host, ":")]
 	req.Header.Set("Host", host)
 	req.Header.Set("Date", millenium.Format(http.TimeFormat))
-	_ = signer.SignDraft(req)
+	err := signer.SignDraft(req)
+	if err != nil {
+		panic(err)
+	}
 
 	v, err := draft.NewVerifier(req)
 	if err != nil {
@@ -198,7 +201,10 @@ func ExampleSigner_SignRFC9421() {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Content-Length", "18")
 
-	_ = signer.SignRFC9421(req)
+	err := signer.SignRFC9421(req)
+	if err != nil {
+		panic(err)
+	}
 	v, err := httpsig.NewVerifier(kresolver(*pubKeyRSA),
 		httpsig.WithValidateAllSignatures(),
 		httpsig.WithCreatedTimestamp(false),
@@ -208,7 +214,9 @@ func ExampleSigner_SignRFC9421() {
 		panic(err)
 	}
 	vv, err := v.Verify(httpsig.MessageFromRequest(req))
-	fmt.Printf("Valid signature: %s\n", vv[0].Label)
+	if err == nil {
+		fmt.Printf("Valid signature: %s\n", vv[0].Label)
+	}
 	fmt.Printf("Verification error: %v", err)
 
 	// Output:

@@ -58,7 +58,7 @@ func ExampleNew_with_s2s_authorization() {
 		_ = json.NewEncoder(w).Encode(signActor)
 	}))
 
-	sig := s2s.New(s2s.WithActor(signActor, prv), s2s.WithCoveredComponents("@method", "@path"))
+	sig := s2s.New(s2s.WithActor(signActor, prv), s2s.WithCoveredComponents(`"@method"`, `"@path"`))
 	fetch := New(WithHTTPClient(srv.Client()), WithAuthorizationFn(sig.SignRFC9421))
 	actor, err := fetch.Actor(context.Background(), "http://example.com/~jdoe")
 	if err != nil {

@@ -6,7 +6,7 @@ require (
 	git.sr.ht/~mariusor/cache v0.0.0-20260911160635-3a397efbb885
 	git.sr.ht/~mariusor/lw v0.0.0-20260917101519-2e0b081e156c
 	github.com/carlmjohnson/requests v0.26.3
-	github.com/dadrus/httpsig v0.10.0
+	github.com/dadrus/httpsig v0.12.0
 	github.com/go-ap/activitypub v0.0.0-20261114094942-b164c2575fd9
 	github.com/go-ap/errors v0.0.0-20261107170344-5391268d9d2c
 	github.com/go-ap/filters v0.0.0-20261114095223-5acde6d8785c

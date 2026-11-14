@@ -189,7 +189,7 @@ func (s *Signer) signRequestRFC(coveredComponents []string) func(req *http.Reque
 		}
 
 		if req.Method == http.MethodPost {
-			coveredComponents = append(coveredComponents, "content-digest")
+			coveredComponents = append(coveredComponents, `"content-digest"`)
 			initFns = append(initFns, rfc.WithContentDigestAlgorithm(rfc.Sha256))
 		}
 		if coveredComponents != nil {
