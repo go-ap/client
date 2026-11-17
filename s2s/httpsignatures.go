@@ -6,8 +6,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
 	"io"
 	"net/http"
 	"slices"
@@ -165,7 +163,7 @@ func (s *Signer) signRequestRFC(coveredComponents []string) func(req *http.Reque
 		}
 		s.l.Tracef("Signing RFC request")
 
-		pubKey, err := toCryptoPublicKey(s.Actor.PublicKey)
+		pubKey, err := s.Actor.PublicKey.CryptoValue()
 		if err != nil {
 			return errors.Annotatef(err, "unable to sign request, unable to validate the Actor's public key")
 		}
@@ -215,19 +213,6 @@ func (s *Signer) signRequestRFC(coveredComponents []string) func(req *http.Reque
 		req.Header = headersWithSignature
 		return nil
 	}
-}
-
-func toCryptoPublicKey(key vocab.PublicKey) (crypto.PublicKey, error) {
-	pubBytes, _ := pem.Decode([]byte(key.PublicKeyPem))
-	if pubBytes == nil {
-		return nil, errors.Newf("unable to decode PEM payload for public key")
-	}
-	pk, _ := x509.ParsePKIXPublicKey(pubBytes.Bytes)
-	if pk != nil {
-		return pk, nil
-	}
-	pk, err := x509.ParsePKCS1PublicKey(pubBytes.Bytes)
-	return pk, err
 }
 
 func keyMismatchErr(pk crypto.PrivateKey, pub crypto.PublicKey) error {
